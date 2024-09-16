@@ -1,16 +1,22 @@
 [tool.poetry]
-name = "compression"
-version = "0.1.0"
-description = ""
-authors = ["Your Name <you@example.com>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.11"
-numpy = "^2.1.1"
-bitarray = "^2.9.2"
-
+name = "arithmetic_coding_bindings"
+version = "1.0.0"
+description = "Python bindings for Arithmetic Coding with Context"
+authors = ["Andy Chen"]
+packages = [{ include = "compression", from = "src" }]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.poetry.dependencies]
+python = ">=3.10"
+openai = "^1.45.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+pre-commit = "^2.20.0"
+
+[tool.poetry.scripts]
+markdown_tree = "scripts.markdown_tree:main"
+ai_commit = "scripts.autocommit:main"

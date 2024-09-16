@@ -1,0 +1,18 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+        types: [python]
+        files: ^src/.*\.py$
+      - id: ruff-format
+        types: [python]
+        files: ^src/.*\.py$
+  - repo: local
+    hooks:
+      - id: ai-commit
+        name: AI Commit Message
+        entry: python scripts/ai_commit_hook.py
+        language: system
+        stages: [prepare-commit-msg]

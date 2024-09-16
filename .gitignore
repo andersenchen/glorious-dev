@@ -1,17 +1,74 @@
-# Python
-   __pycache__/
-   *.py[cod]
-   
-   # Poetry
-   .venv/
-   
-   # Environments
-   .env
-   
-   # IDE-specific files
-   .vscode/
-   .idea/
-   
-   # OS-specific files
-   .DS_Store
-   Thumbs.db
+# Byte-compiled Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions and compiled files
+*.so
+*.dll
+*.dylib
+*.pyd
+*.o
+*.obj
+*.a
+*.lib
+
+# Virtual environments
+.venv/
+venv/
+.env/
+bindings_venv/
+*.jpg
+
+# Poetry files
+poetry.lock
+.poetry/
+
+# Setuptools/Egg metadata
+*.egg-info/
+.eggs/
+*.egg
+*.manifest
+*.wheel
+
+# Build directories
+bin/
+build/
+dist/
+
+# CMake/Makefile generated files (ignore CMake outputs, but not Makefile itself)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Test results and coverage
+coverage/
+*.cover
+*.log
+.tox/
+.nox/
+*.coverage
+htmlcov/
+
+# IDEs and editor-specific
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Distribution archives
+*.tar.gz
+*.zip
+*.whl
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS specific
+.DS_Store
+
+# Windows specific
+Thumbs.db
+
+# Mypy cache
+.mypy_cache/
