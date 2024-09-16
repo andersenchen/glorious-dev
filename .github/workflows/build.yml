@@ -50,7 +50,6 @@ jobs:
         with:
           path: |
             ~/.cache/pip
-            bindings_venv
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/setup.py', '**/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}
@@ -61,34 +60,52 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc make valgrind
 
-      - name: Install system dependencies (Windows)
+      - name: Install Make on Windows
         if: runner.os == 'Windows'
         run: |
-          echo "No additional system dependencies needed for Windows."
+          choco install make -y
+          echo "Make installed on Windows."
+        shell: cmd
 
       - name: Set up virtual environment and install dependencies
         run: |
           python -m venv bindings_venv
-          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            call bindings_venv\Scripts\activate.bat
+          else
+            source bindings_venv/bin/activate
+          fi
           pip install --upgrade pip setuptools wheel
           pip install --prefer-binary .
         shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
       - name: Build project
         run: |
-          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            call bindings_venv\Scripts\activate.bat
+          else
+            source bindings_venv/bin/activate
+          fi
           make -j all
         shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
       - name: Build wheel
         run: |
-          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            call bindings_venv\Scripts\activate.bat
+          else
+            source bindings_venv/bin/activate
+          fi
           make wheel
         shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
       - name: Run E2E tests
         run: |
-          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            call bindings_venv\Scripts\activate.bat
+          else
+            source bindings_venv/bin/activate
+          fi
           make test
         shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
@@ -127,7 +144,6 @@ jobs:
         with:
           path: |
             ~/.cache/pip
-            bindings_venv
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/setup.py', '**/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}
@@ -144,34 +160,51 @@ jobs:
           brew update
           brew install gcc make valgrind
 
-      - name: Install system dependencies (Windows)
-        if: runner.os == 'Windows'
+      - name: Install Make on macOS
+        if: runner.os == 'macOS'
         run: |
-          echo "No additional system dependencies needed for Windows."
+          brew install make
+        shell: bash
 
       - name: Set up virtual environment and install dependencies
         run: |
           python -m venv bindings_venv
-          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            call bindings_venv\Scripts\activate.bat
+          else
+            source bindings_venv/bin/activate
+          fi
           pip install --upgrade pip setuptools wheel
           pip install --prefer-binary .
         shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
       - name: Build project
         run: |
-          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            call bindings_venv\Scripts\activate.bat
+          else
+            source bindings_venv/bin/activate
+          fi
           make -j all
         shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
       - name: Build wheel
         run: |
-          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            call bindings_venv\Scripts\activate.bat
+          else
+            source bindings_venv/bin/activate
+          fi
           make wheel
         shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
       - name: Run E2E tests
         run: |
-          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            call bindings_venv\Scripts\activate.bat
+          else
+            source bindings_venv/bin/activate
+          fi
           make test
         shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
