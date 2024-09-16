@@ -2,138 +2,20 @@ name: Build, Test, and E2E Test
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "bugfix/**"
+      - "hotfix/**"
   pull_request:
-    branches: [develop]
+    branches:
+      - main
+      - develop
 
 jobs:
-  # Job for Pull Requests to 'develop' branch
-  build-and-test-pr:
-    name: Build and Test - PR to Develop
-    if: github.event_name == 'pull_request' && github.base_ref == 'develop'
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            python-version: "3.10"
-          - os: windows-latest
-            python-version: "3.12"
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      # Checkout the repository.
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      # Set up the Python version.
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      # Cache both pip and Python virtual environment for faster installs.
-      - name: Cache Python dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/pip
-            bindings_venv
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('setup.py') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}
-
-      # Install system dependencies for Linux.
-      - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc make valgrind
-
-      # Install additional dependencies for Windows.
-      - name: Install additional dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          echo "No additional system dependencies needed for Windows."
-
-      # Upgrade pip and install your package dependencies inside a virtual environment (Linux).
-      - name: Set up virtual environment (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          python -m venv bindings_venv
-          source bindings_venv/bin/activate
-          pip install --upgrade pip setuptools wheel
-          pip install --prefer-binary .
-        shell: bash
-
-      # Upgrade pip and install your package dependencies inside a virtual environment (Windows).
-      - name: Set up virtual environment (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          python -m venv bindings_venv
-          bindings_venv\Scripts\activate
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install --prefer-binary .
-        shell: cmd
-
-      # Build the project using parallel jobs with `make -j` (Linux).
-      - name: Build project (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          source bindings_venv/bin/activate
-          make -j all
-        shell: bash
-
-      # Build the project using parallel jobs with `make -j` (Windows).
-      - name: Build project (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          bindings_venv\Scripts\activate
-          make -j all
-        shell: cmd
-
-      # Build the Python wheel (Linux).
-      - name: Build wheel (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          source bindings_venv/bin/activate
-          make wheel
-        shell: bash
-
-      # Build the Python wheel (Windows).
-      - name: Build wheel (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          bindings_venv\Scripts\activate
-          make wheel
-        shell: cmd
-
-      # Run E2E tests and check for memory leaks (Linux).
-      - name: Run E2E tests (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          source bindings_venv/bin/activate
-          make test
-        shell: bash
-
-      # Run E2E tests and check for memory leaks (Windows).
-      - name: Run E2E tests (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          bindings_venv\Scripts\activate
-          make test
-        shell: cmd
-
-      # Upload the generated wheel file as an artifact.
-      - name: Upload wheel as artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: dist/*.whl
-
-  # Job for Pushes to 'main' branch
-  build-and-test-main:
-    name: Build, Test, and E2E Test - Push to Main
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  build-and-test:
+    name: Build and Test
     strategy:
       matrix:
         include:
@@ -150,17 +32,14 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      # Checkout the repository.
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # Set up the Python version.
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Cache both pip and Python virtual environment for faster installs.
       - name: Cache Python dependencies
         uses: actions/cache@v3
         with:
@@ -171,26 +50,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}
 
-      # Install system dependencies for Linux.
       - name: Install system dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc make valgrind
 
-      # Install system dependencies for macOS.
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install gcc make
 
-      # Install additional dependencies for Windows.
       - name: Install additional dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
           echo "No additional system dependencies needed for Windows."
 
-      # Upgrade pip and install your package dependencies inside a virtual environment (Linux and macOS).
       - name: Set up virtual environment (Linux and macOS)
         if: runner.os != 'Windows'
         run: |
@@ -200,7 +75,6 @@ jobs:
           pip install --prefer-binary .
         shell: bash
 
-      # Upgrade pip and install your package dependencies inside a virtual environment (Windows).
       - name: Set up virtual environment (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -210,7 +84,6 @@ jobs:
           python -m pip install --prefer-binary .
         shell: cmd
 
-      # Build the project using parallel jobs with `make -j` (Linux and macOS).
       - name: Build project (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -218,7 +91,6 @@ jobs:
           make -j all
         shell: bash
 
-      # Build the project using parallel jobs with `make -j` (Windows).
       - name: Build project (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -226,7 +98,6 @@ jobs:
           make -j all
         shell: cmd
 
-      # Build the Python wheel (Linux and macOS).
       - name: Build wheel (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -234,7 +105,6 @@ jobs:
           make wheel
         shell: bash
 
-      # Build the Python wheel (Windows).
       - name: Build wheel (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -242,7 +112,6 @@ jobs:
           make wheel
         shell: cmd
 
-      # Run E2E tests and check for memory leaks (Linux and macOS).
       - name: Run E2E tests (includes memory checks) (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -250,7 +119,6 @@ jobs:
           make test
         shell: bash
 
-      # Run E2E tests and check for memory leaks (Windows).
       - name: Run E2E tests (includes memory checks) (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -258,7 +126,6 @@ jobs:
           make test
         shell: cmd
 
-      # Upload the generated wheel file as an artifact.
       - name: Upload wheel as artifact
         uses: actions/upload-artifact@v3
         with:
