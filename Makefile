@@ -123,11 +123,20 @@ endif
 	@$(PYTHON_BINDINGS_VENV) -m unittest discover $(TESTDIR) || (echo "Tests failed" && exit 1)
 	@echo "All tests passed successfully."
 
-# Updated target for AI-powered commit, add everything and push
+#  AI-powered commit, add everything and push if on develop branch
 ship: test
 	@echo "All tests passed. Proceeding with commit..."
 	@git add -A
 	@PYTHONPATH=$(shell pwd) poetry run ai_commit
+
+	# Detect current branch
+	@CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$CURRENT_BRANCH" = "develop" ]; then \
+		echo "On 'develop' branch. Pushing commits to private repository..."; \
+		git push private develop; \
+	else \
+		echo "Not on 'develop' branch. Skipping push."; \
+	fi
 
 # New target to run compress_image.py script
 run_example: install
