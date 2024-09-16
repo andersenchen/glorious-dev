@@ -5,27 +5,32 @@ on:
     branches:
       - main
       - develop
-      - "feature/**"
-      - "bugfix/**"
-      - "hotfix/**"
   pull_request:
     branches:
       - main
       - develop
 
 jobs:
+  determine-tests:
+    runs-on: ubuntu-latest
+    outputs:
+      run-full-matrix: ${{ steps.check-branch.outputs.run-full-matrix }}
+    steps:
+      - id: check-branch
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && ("${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/develop") ]]; then
+            echo "run-full-matrix=true" >> $GITHUB_OUTPUT
+          else
+            echo "run-full-matrix=false" >> $GITHUB_OUTPUT
+          fi
+
   build-and-test:
+    needs: determine-tests
     name: Build and Test
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
-            python-version: "3.10"
-          - os: ubuntu-latest
-            python-version: "3.11"
-          - os: ubuntu-latest
-            python-version: "3.12"
-          - os: macos-latest
             python-version: "3.12"
           - os: windows-latest
             python-version: "3.12"
@@ -46,7 +51,84 @@ jobs:
           path: |
             ~/.cache/pip
             bindings_venv
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('setup.py') }}
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/setup.py', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}
+
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make valgrind
+
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "No additional system dependencies needed for Windows."
+
+      - name: Set up virtual environment and install dependencies
+        run: |
+          python -m venv bindings_venv
+          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          pip install --upgrade pip setuptools wheel
+          pip install --prefer-binary .
+        shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
+
+      - name: Build project
+        run: |
+          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          make -j all
+        shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
+
+      - name: Build wheel
+        run: |
+          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          make wheel
+        shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
+
+      - name: Run E2E tests
+        run: |
+          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
+          make test
+        shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
+
+      - name: Upload wheel as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: dist/*.whl
+
+  full-matrix-test:
+    needs: determine-tests
+    if: needs.determine-tests.outputs.run-full-matrix == 'true'
+    name: Full Matrix Test
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: macos-latest
+            python-version: "3.12"
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            bindings_venv
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/setup.py', '**/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}
 
@@ -59,72 +141,39 @@ jobs:
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install gcc make
+          brew update
+          brew install gcc make valgrind
 
-      - name: Install additional dependencies (Windows)
+      - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
           echo "No additional system dependencies needed for Windows."
 
-      - name: Set up virtual environment (Linux and macOS)
-        if: runner.os != 'Windows'
+      - name: Set up virtual environment and install dependencies
         run: |
           python -m venv bindings_venv
-          source bindings_venv/bin/activate
+          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
           pip install --upgrade pip setuptools wheel
           pip install --prefer-binary .
-        shell: bash
+        shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
-      - name: Set up virtual environment (Windows)
-        if: runner.os == 'Windows'
+      - name: Build project
         run: |
-          python -m venv bindings_venv
-          bindings_venv\Scripts\activate
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install --prefer-binary .
-        shell: cmd
-
-      - name: Build project (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: |
-          source bindings_venv/bin/activate
+          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
           make -j all
-        shell: bash
+        shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
-      - name: Build project (Windows)
-        if: runner.os == 'Windows'
+      - name: Build wheel
         run: |
-          bindings_venv\Scripts\activate
-          make -j all
-        shell: cmd
-
-      - name: Build wheel (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: |
-          source bindings_venv/bin/activate
+          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
           make wheel
-        shell: bash
+        shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
-      - name: Build wheel (Windows)
-        if: runner.os == 'Windows'
+      - name: Run E2E tests
         run: |
-          bindings_venv\Scripts\activate
-          make wheel
-        shell: cmd
-
-      - name: Run E2E tests (includes memory checks) (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: |
-          source bindings_venv/bin/activate
+          ${{ runner.os == 'Windows' && 'bindings_venv\\Scripts\\activate' || 'source bindings_venv/bin/activate' }}
           make test
-        shell: bash
-
-      - name: Run E2E tests (includes memory checks) (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          bindings_venv\Scripts\activate
-          make test
-        shell: cmd
+        shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
 
       - name: Upload wheel as artifact
         uses: actions/upload-artifact@v3
