@@ -114,14 +114,21 @@ ifeq ($(OS),Windows_NT)
 	@echo "Memory checking tools like Valgrind are not available on Windows."
 else
 ifeq ($(UNAME_S),Darwin)
-	@$(MAKE) leaks-python
+	@echo "Checking for memory leaks on macOS..."
+	# Capture output in a temporary file and only show logs if there is a failure
+	@$(MAKE) leaks-python > leaks.log 2>&1 || (cat leaks.log && echo "Memory leaks detected!" && exit 1)
+	@rm -f leaks.log
 else
-	@$(MAKE) valgrind-python
+	@echo "Checking for memory leaks with Valgrind..."
+	# Capture Valgrind output in a temporary file and only show logs if there is a failure
+	@$(MAKE) valgrind-python > valgrind.log 2>&1 || (cat valgrind.log && echo "Valgrind detected issues!" && exit 1)
+	@rm -f valgrind.log
 endif
 endif
 	@echo "Running unit tests..."
 	@$(PYTHON_BINDINGS_VENV) -m unittest discover $(TESTDIR) || (echo "Tests failed" && exit 1)
 	@echo "All tests passed successfully."
+
 
 #  AI-powered commit, add everything and push if on develop branch
 ship: test
