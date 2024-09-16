@@ -123,11 +123,85 @@ endif
 	@$(PYTHON_BINDINGS_VENV) -m unittest discover $(TESTDIR) || (echo "Tests failed" && exit 1)
 	@echo "All tests passed successfully."
 
-# Updated target for AI-powered commit, add everything and push
+#  AI-powered commit, add everything and push if on develop branch
 ship: test
 	@echo "All tests passed. Proceeding with commit..."
 	@git add -A
 	@PYTHONPATH=$(shell pwd) poetry run ai_commit
+
+	# Detect current branch
+	@CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$CURRENT_BRANCH" = "develop" ]; then \
+		echo "On 'develop' branch. Pushing commits to private repository..."; \
+		git push private develop; \
+	else \
+		echo "Not on 'develop' branch. Skipping push."; \
+	fi
+
+# New target to automate squash-and-merge into develop branch using AI-generated commit messages
+squash-merge: test
+	@echo "Starting squash-and-merge process..."
+
+	# Detect current branch
+	@CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$CURRENT_BRANCH" = "develop" ]; then \
+		echo "You are on the 'develop' branch. Please switch to a feature branch to perform squash-and-merge."; \
+		exit 1; \
+	fi
+
+	# Ensure there are commits to squash
+	@COMMIT_COUNT=$$(git rev-list --count develop..$$CURRENT_BRANCH); \
+	if [ "$$COMMIT_COUNT" -le 1 ]; then \
+		echo "Not enough commits to squash. At least two commits are required."; \
+		exit 1; \
+	fi
+
+	# Switch to develop branch
+	@echo "Switching to 'develop' branch..."; \
+	git checkout develop
+
+	# Pull the latest changes from develop
+	@echo "Pulling latest changes from 'develop'..."; \
+	git pull origin develop
+
+	# Switch back to the feature branch
+	@echo "Switching back to '$$CURRENT_BRANCH' branch..."; \
+	git checkout $$CURRENT_BRANCH
+
+	# Generate the squashed commit message using AI
+	@echo "Generating squashed commit message using AI..."; \
+	SQUASH_MSG=$$(python scripts/autocommit.py --generate-squash-message); \
+	if [ -z "$$SQUASH_MSG" ]; then \
+		echo "Failed to generate squash commit message."; \
+		exit 1; \
+	fi
+
+	# Squash commits into a single commit with AI-generated message
+	@echo "Squashing commits on '$$CURRENT_BRANCH'..."; \
+	git reset --soft develop; \
+	echo "$$SQUASH_MSG" | git commit -F -
+
+	# Merge the squashed commit into develop using --no-ff to ensure a merge commit
+	@echo "Merging '$$CURRENT_BRANCH' into 'develop'..."; \
+	git checkout develop; \
+	git merge --no-ff $$CURRENT_BRANCH -m "Squash merged $$CURRENT_BRANCH into develop"
+
+	# Push the updated develop branch
+	@echo "Pushing 'develop' to remote repository..."; \
+	git push origin develop
+
+	# Optional: Delete the feature branch locally and remotely
+	@echo "Do you want to delete the branch '$$CURRENT_BRANCH'? (y/n)"; \
+	read DELETE_BRANCH; \
+	if [ "$$DELETE_BRANCH" = "y" ] || [ "$$DELETE_BRANCH" = "Y" ]; then \
+		git branch -d $$CURRENT_BRANCH; \
+		git push origin --delete $$CURRENT_BRANCH; \
+		echo "Branch '$$CURRENT_BRANCH' deleted."; \
+	else \
+		echo "Branch '$$CURRENT_BRANCH' retained."; \
+	fi
+
+	@echo "Squash-and-merge process completed successfully."
 
 # New target to run compress_image.py script
 run_example: install
