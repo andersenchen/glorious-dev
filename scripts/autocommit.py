@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""AI-powered Git commit message generator using OpenAI's GPT-4 model.
+"""AI-powered Git commit message generator using OpenAI's language models.
 
 This script generates Git commit messages in Google style based on the diff of
-staged changes or when amending a commit. It uses OpenAI's GPT-4 model to analyze
+staged changes or when amending a commit. It uses OpenAI's language models to analyze
 the diff and create an appropriate commit message.
 
 Typical usage example:
@@ -16,6 +16,7 @@ Typical usage example:
 import os
 import subprocess
 import sys
+import time
 from typing import List
 
 import openai
@@ -26,6 +27,15 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # Initialize OpenAI client
 client = openai.OpenAI()
 
+# Constant format string for the prompt
+COMMIT_MESSAGE_PROMPT = """## GIT DIFF START
+{diff}
+## GIT DIFF END
+
+A commit message starts with a brief imperative summary (max 50 chars), optionally followed by a body explaining why and how, with lines up to 72 characters.
+
+Write a GitHub commit message Jeff Dean would write if he saw this diff. Be realistic. No formatting.
+"""
 
 def get_git_diff_with_function_context(amend: bool = False) -> str:
     """Retrieves the git diff with function context.
@@ -63,7 +73,7 @@ def get_git_diff_with_function_context(amend: bool = False) -> str:
 
 
 def generate_commit_message(diff: str, amend: bool = False) -> str:
-    """Generates a commit message using OpenAI's GPT-4 model in Google style.
+    """Generates a commit message using OpenAI's language model in Google style.
 
     Args:
       diff: A string containing the git diff to base the commit message on.
@@ -77,22 +87,21 @@ def generate_commit_message(diff: str, amend: bool = False) -> str:
     """
 
     try:
+        print("Starting OpenAI API call...")
+        start_time = time.time()
+
         response = client.chat.completions.create(
             model="o1-mini",
             messages=[
                 {
                     "role": "user",
-                    "content": f"""## GIT DIFF START
-{diff}
-## GIT DIFF END
-
-A commit message starts with a brief imperative summary (max 50 chars), optionally followed by a body explaining why and how, with lines up to 72 characters.
-
-Write a GitHub commit message Jeff Dean would write if he saw this diff. Be realistic. No formatting.
-""",
+                    "content": COMMIT_MESSAGE_PROMPT.format(diff=diff),
                 },
             ],
         )
+
+        end_time = time.time()
+        print(f"OpenAI API call completed in {end_time - start_time:.2f} seconds")
 
         # Get the raw content of the response
         message_content = response.choices[0].message.content.strip()
@@ -122,6 +131,12 @@ def main() -> None:
             return
 
         commit_message = generate_commit_message(diff, amend)
+
+        # Print the generated commit message
+        print("\nGenerated commit message:")
+        print("---------------------------")
+        print(commit_message)
+        print("---------------------------\n")
 
         # Prepare the git command
         git_command: List[str] = ["git", "commit"]
