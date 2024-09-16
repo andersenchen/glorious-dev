@@ -123,7 +123,7 @@ endif
 	@$(PYTHON_BINDINGS_VENV) -m unittest discover $(TESTDIR) || (echo "Tests failed" && exit 1)
 	@echo "All tests passed successfully."
 
-# AI-powered commit, add everything and push if on develop branch
+#  AI-powered commit, add everything and push if on develop branch
 ship: test
 	@echo "All tests passed. Proceeding with commit..."
 	@git add -A
