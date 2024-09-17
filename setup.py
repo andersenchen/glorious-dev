@@ -25,7 +25,7 @@ def get_libraries():
 # Define platform-specific macros and flags
 extra_compile_args = []
 extra_link_args = []
-include_dirs = ["src/compression/c/include", sysconfig.get_path("include")]
+include_dirs = ["src/glorious/c/include", sysconfig.get_path("include")]
 library_dirs = []
 
 # Common compiler flags
@@ -82,10 +82,10 @@ else:
 module = Extension(
     "glorious",  # This is the desired import name
     sources=[
-        "src/compression/bindings/arithmetic_coding_bindings.c",
-        "src/compression/c/src/arithmetic_coding.c",
-        "src/compression/c/src/probability.c",
-        "src/compression/c/src/utilities.c",
+        "src/glorious/bindings/arithmetic_coding_bindings.c",
+        "src/glorious/c/src/arithmetic_coding.c",
+        "src/glorious/c/src/probability.c",
+        "src/glorious/c/src/utilities.c",
     ],
     include_dirs=include_dirs,
     library_dirs=library_dirs,
