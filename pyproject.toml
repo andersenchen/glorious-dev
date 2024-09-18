@@ -2,21 +2,38 @@
 name = "glorious"
 version = "1.0.0"
 description = "Python bindings for Arithmetic Coding with Context"
-authors = ["Andy Chen"]
+authors = ["Andy Chen <your.email@example.com>"]
 packages = [{ include = "glorious", from = "src" }]
-
-[build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
+readme = "README.md"
+homepage = "https://github.com/mister-brain/glorious"
+repository = "https://github.com/mister-brain/glorious"
+keywords = ["arithmetic coding", "compression", "C", "Python", "bindings"]
+# categories = ["Development", "Utilities"] # Uncomment and choose appropriate categories
 
 [tool.poetry.dependencies]
-python = "^3.11.0"
+python = ">=3.9.0"
 openai = "^1.45.0"
+pathspec = "^0.12.1"
+pygments = "^2.17.0" # Corrected version for pygments
+setuptools = "^61.0"
 
-[tool.poetry.group.dev.dependencies]
+
+[tool.poetry.dev-dependencies]
 pytest = "^8.3.3"
+pytest-metadata = "^3.1.1"
 pre-commit = "^2.20.0"
+tox = "^4.19.0"
+
+[tool.poetry.extras]
+examples = ["requests", "Pillow"]
 
 [tool.poetry.scripts]
-markdown_tree = "scripts.markdown_tree:main"
+generate-tree = "scripts.generate_tree:main" # Renamed for consistency
 ai_commit = "scripts.autocommit:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.poetry.urls]
+documentation = "https://github.com/mister-brain/glorious/docs" # Update if you have documentation

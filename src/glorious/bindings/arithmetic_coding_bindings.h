@@ -67,6 +67,6 @@ extern struct PyModuleDef arithmeticcodingmodule;
  *
  * @return PyObject* The initialized module object.
  */
-PyMODINIT_FUNC PyInit_glorious(void);
+PyMODINIT_FUNC PyInit__glorious(void); // Updated to match C file
 
-#endif  // ARITHMETIC_CODING_BINDINGS_H
+#endif // ARITHMETIC_CODING_BINDINGS_H

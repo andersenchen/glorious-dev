@@ -1,0 +1,18 @@
+# Include all header files in glorious/c/include
+recursive-include src/glorious/c/include *.h
+
+# Include all header files and stub files in glorious/bindings
+recursive-include src/glorious/bindings *.h *.pyi
+
+# Include C source files
+recursive-include src/glorious/c/src *.c
+recursive-include src/glorious/bindings *.c
+
+# Include compiled extensions
+recursive-include src/glorious *.so *.pyd *.dll
+
+# Include the README file
+include README.md
+
+# Include the py.typed files
+include src/glorious/py.typed

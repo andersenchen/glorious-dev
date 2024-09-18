@@ -1,35 +1,43 @@
+# Makefile for Glorious Project
+
+# Extract version dynamically from pyproject.toml
+VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+
 # Detect OS and set OS-specific variables
 ifeq ($(OS),Windows_NT)
   PYTHON := python
-  BINDINGS_VENV := bindings_venv
-  ACTIVATE_BINDINGS := $(BINDINGS_VENV)/Scripts/activate.bat
   MKDIR := mkdir
-  RM := rm -rf  # Use rm -rf for Git Bash compatibility on Windows
-  PIP := $(BINDINGS_VENV)/Scripts/pip.exe
-  PYTHON_BINDINGS_VENV := $(BINDINGS_VENV)/Scripts/python.exe
+  # Use appropriate commands for Windows
+  # 'del /S /Q' deletes files, 'rmdir /S /Q' deletes directories
+  RM_FILES := del /S /Q
+  RM_DIR := rmdir /S /Q
   SEP := /
+  POETRY_INSTALL := pip install poetry
+  PYTHON_INSTALL := @echo "Please install Python manually on Windows."
 else
   PYTHON := python3
-  BINDINGS_VENV := bindings_venv
-  ACTIVATE_BINDINGS := source $(BINDINGS_VENV)/bin/activate
   MKDIR := mkdir -p
   RM := rm -rf
-  PIP := $(BINDINGS_VENV)/bin/pip
-  PYTHON_BINDINGS_VENV := $(BINDINGS_VENV)/bin/python
   SEP := /
+  POETRY_INSTALL := pip3 install poetry
+  PYTHON_INSTALL := sudo apt-get update && sudo apt-get install -y python3 python3-pip
 
   # Detect Unix-like OS
   UNAME_S := $(shell uname -s)
+  ifeq ($(UNAME_S),Darwin)
+    PYTHON_INSTALL := brew install python
+  endif
 endif
 
 # Git command variable
 GIT := git
 
 # Directories
-SRCDIR := src$(SEP)compression$(SEP)c$(SEP)src
-INCDIR := src$(SEP)compression$(SEP)c$(SEP)include
-BINDINGS_DIR := src$(SEP)compression$(SEP)bindings
+SRCDIR := src$(SEP)glorious$(SEP)c$(SEP)src
+INCDIR := src$(SEP)glorious$(SEP)c$(SEP)include
+BINDINGS_DIR := src$(SEP)glorious$(SEP)bindings
 TESTDIR := tests
+INTEGRATION_TESTDIR := integration_tests
 DISTDIR := dist
 
 PYTHON_MODULE_NAME := glorious
@@ -40,47 +48,96 @@ COMPRESS_IMAGE_SCRIPT := $(EXAMPLES_DIR)/compress_image.py
 BACKUP_BRANCH := backup-before-sync
 
 # Targets
-.PHONY: all clean install wheel test deps valgrind-python leaks-python ac run_example ship sync-with-public
+.PHONY: all clean install wheel test unit_tests integration_tests deps \
+        valgrind-python leaks-python run_example \
+        check-poetry check-lock update-lock build_ext tree ship
 
 # Default target
-all: install
+all: check-python check-poetry check-lock build_ext install test
 
-# Create a virtual environment and install build requirements for the bindings
-$(BINDINGS_VENV):
-	@echo "Creating virtual environment in $(BINDINGS_VENV)..."
-	@$(PYTHON) -m venv $(BINDINGS_VENV) > /dev/null 2>&1
-	@echo "Upgrading pip, setuptools, and wheel in virtual environment..."
-	@$(PYTHON_BINDINGS_VENV) -m pip install --upgrade pip setuptools wheel > /dev/null 2>&1
-	@echo "Virtual environment setup complete."
+# Ensure Python is installed
+check-python:
+	@command -v $(PYTHON) >/dev/null 2>&1 || { \
+		echo >&2 "Python is not installed. Installing Python..."; \
+		$(PYTHON_INSTALL); \
+	}
 
-# Install dependencies and build the extension within the bindings virtual environment
-install: $(BINDINGS_VENV)
-	@echo "Installing project and dependencies..."
-	@$(PYTHON_BINDINGS_VENV) -m pip install . > /dev/null 2>&1
-	@echo "Installation complete."
+# Ensure Poetry is installed
+check-poetry: check-python
+	@command -v poetry >/dev/null 2>&1 || { \
+		echo >&2 "Poetry is not installed. Installing Poetry..."; \
+		$(POETRY_INSTALL); \
+	}
 
-# Build Python Wheel using setuptools within the bindings virtual environment
-wheel: install
-	@echo "Building Python wheel..."
-	@$(PYTHON_BINDINGS_VENV) setup.py bdist_wheel --dist-dir=$(DISTDIR) > /dev/null 2>&1
-	@echo "Wheel built successfully in $(DISTDIR)."
+# Check if poetry.lock is consistent with pyproject.toml
+check-lock: check-poetry
+	@echo "Checking if poetry.lock is consistent with pyproject.toml..."
+	@poetry check > /dev/null 2>&1 || { \
+		echo >&2 "poetry.lock is not consistent with pyproject.toml. Regenerating poetry.lock..."; \
+		poetry lock --no-update || { echo >&2 "Failed to regenerate poetry.lock."; exit 1; } \
+	}
+
+# Build C extension
+build_ext: check-poetry check-lock
+	@echo "Installing setuptools..."
+	@poetry run pip install setuptools
+	@echo "Building C extension in-place..."
+	@poetry run $(PYTHON) setup.py build_ext --inplace --verbose
+	@echo "C extension built successfully."
+
+# Install dependencies using Poetry
+install: build_ext
+	@echo "Installing project dependencies with Poetry..."
+	@poetry install --no-interaction --no-ansi || { \
+		echo >&2 "Poetry install failed. Attempting to regenerate poetry.lock..."; \
+		poetry lock --no-update && poetry install --no-interaction --no-ansi || { \
+			echo >&2 "Poetry install failed even after regenerating poetry.lock."; \
+			exit 1; \
+		} \
+	}
+	@echo "Dependencies installed successfully."
+
+# Build Python Wheel using Poetry
+wheel: build_ext install
+	@echo "Building Python wheel with Poetry..."
+	@poetry build --format wheel
+	@echo "Wheel built successfully in dist/."
 
 # Clean Build Artifacts
 clean:
 	@echo "Removing dist, build, and virtual environment directories..."
-	@$(RM) $(DISTDIR) $(BINDINGS_VENV) *.egg-info build
+ifeq ($(OS),Windows_NT)
+	@$(RM_DIR) $(DISTDIR) 2>nul || echo "dist directory not found."
+	@$(RM_DIR) *.egg-info 2>nul || echo "*.egg-info directory not found."
+	@$(RM_DIR) build 2>nul || echo "build directory not found."
+	@$(RM_DIR) .venv 2>nul || echo ".venv directory not found."
+else
+	@$(RM) -r $(DISTDIR) *.egg-info build .venv
+endif
 
 	@echo "Removing C extension artifacts..."
-	@$(RM) $(SRCDIR)/*.so
-	@$(RM) $(SRCDIR)/*.o
+ifeq ($(OS),Windows_NT)
+	# Windows doesn't support wildcard deletion in the same way; might need additional tools or scripts
+	@echo "Manual removal of .so/.pyd/.dll files may be required on Windows."
+else
+	@$(RM) $(SRCDIR)/*.so $(SRCDIR)/*.o 2>/dev/null || echo "No C extension artifacts found."
+endif
 
 	@echo "Removing compiled Python files and __pycache__ directories..."
-	@find . -type d -name "__pycache__" -exec $(RM) {} +
-	@find . -type f -name "*.py[cod]" -exec $(RM) {} +
+ifeq ($(OS),Windows_NT)
+	@for /r . %%d in (__pycache__) do @if exist "%%d" $(RM_DIR) "%%d"
+	@for /r . %%f in (*.pyc *.pyo *.pyd) do @if exist "%%f" $(RM_FILES) "%%f"
+else
+	@find . -type d -name "__pycache__" -exec $(RM) {} + 2>/dev/null
+	@find . -type f -name "*.py[cod]" -exec $(RM) {} + 2>/dev/null
+endif
 
 	@echo "Cleaning up additional log files or temporary files..."
-	@$(RM) *.coverage
-	@$(RM) *.log
+ifeq ($(OS),Windows_NT)
+	@$(RM_FILES) *.coverage *.log 2>nul || echo "No coverage or log files to remove."
+else
+	@$(RM) *.coverage *.log 2>/dev/null || echo "No coverage or log files to remove."
+endif
 
 	@echo "Clean complete."
 
@@ -93,8 +150,8 @@ ifeq ($(UNAME_S),Darwin)
 	@echo "No system-level dependencies required for macOS."
 else
 	@echo "Installing system-level dependencies for Linux..."
-	@sudo apt-get update > /dev/null 2>&1
-	@sudo apt-get install -y valgrind > /dev/null 2>&1
+	@sudo apt-get update
+	@sudo apt-get install -y valgrind
 	@echo "System dependencies installed."
 endif
 endif
@@ -108,7 +165,7 @@ ifeq ($(UNAME_S),Darwin)
 	@echo "Valgrind is not available on macOS. Skipping Valgrind checks."
 else
 	@echo "Running Python with Valgrind to check for memory leaks..."
-	@valgrind --leak-check=full --track-origins=yes --show-reachable=yes --error-exitcode=1 $(PYTHON_BINDINGS_VENV) -c "import $(PYTHON_MODULE_NAME)"
+	@valgrind --leak-check=full --track-origins=yes --show-reachable=yes --error-exitcode=1 $(PYTHON) -c "import $(PYTHON_MODULE_NAME)"
 endif
 endif
 
@@ -116,92 +173,50 @@ endif
 leaks-python: install
 ifeq ($(UNAME_S),Darwin)
 	@echo "Running Python with leaks to check for memory leaks..."
-	@leaks --atExit -- $(PYTHON_BINDINGS_VENV) -c "import $(PYTHON_MODULE_NAME)"
+	@leaks --atExit -- $(PYTHON) -c "import $(PYTHON_MODULE_NAME)"
 else
 	@echo "The leaks command is only available on macOS. Skipping leaks checks."
 endif
 
-# Test memory leaks and run unit tests
-test: clean $(BINDINGS_VENV) deps install
-ifeq ($(OS),Windows_NT)
-	@echo "Memory checking tools like Valgrind are not available on Windows."
-else
-ifeq ($(UNAME_S),Darwin)
-	@echo "Checking for memory leaks on macOS..."
-	# Capture output in a temporary file and only show logs if there is a failure
-	@$(MAKE) leaks-python > leaks.log 2>&1 || (cat leaks.log && echo "Memory leaks detected!" && exit 1)
-	@rm -f leaks.log
-else
-	@echo "Checking for memory leaks with Valgrind..."
-	# Capture Valgrind output in a temporary file and only show logs if there is a failure
-	@$(MAKE) valgrind-python > valgrind.log 2>&1 || (cat valgrind.log && echo "Valgrind detected issues!" && exit 1)
-	@rm -f valgrind.log
-endif
-endif
-	@echo "Running unit tests..."
-	# Activate venv, run tests, and deactivate venv
-	@$(PYTHON_BINDINGS_VENV) -m unittest discover $(TESTDIR) || (exit 1)
+# Autocommit changes using AI-generated commit message
+ship: check-poetry
+	@echo "Running autocommit..."
+	@git add -A
+	@poetry run ai_commit
+
+# Run tests using Tox in parallel
+test: clean	install
+	@echo "Running all tests using Tox in parallel..."
+	@poetry run tox --parallel auto
 	@echo "All tests passed successfully."
 
+# Run unit tests using Tox
+unit_tests:
+	@echo "Running unit tests using Tox..."
+	@poetry run tox -e py311
+	@echo "Unit tests passed successfully."
 
-# New target to run compress_image.py script
+# Run integration tests using Tox
+integration_tests:
+	@echo "Running integration tests using Tox..."
+	@poetry run tox -e integration
+	@echo "Integration tests passed successfully."
+
+# Run compress_image.py script
 run_example: install
 	@echo "Installing necessary dependencies for compress_image.py..."
-	@$(PYTHON_BINDINGS_VENV) -m pip install requests Pillow > /dev/null 2>&1
+	@poetry install --extras "examples" --no-interaction --no-ansi
 	@echo "Dependencies installed."
-
 	@echo "Running compress_image.py..."
-	@$(PYTHON_BINDINGS_VENV) $(COMPRESS_IMAGE_SCRIPT)
+	@poetry run $(PYTHON) $(COMPRESS_IMAGE_SCRIPT)
 
-# New target to sync private and public repositories, generate AI commit message, and push to private
-sync-with-public: install test
-	@echo "Syncing private repo with public repo..."
+# New target for tree command
+tree:
+	@echo "Generating tree structure..."
+	@tree -a -I '.git|dist|*.egg-info|build|.venv|__pycache__|*.py[cod]|*.so|*.o|*.pyd|*.dll' --gitignore -f -s -h --si
 
-	# Ensure the working directory is clean
-	@echo "Checking for uncommitted changes..."
-	@if [ -n "$$(git status --porcelain)" ]; then \
-		echo "You have uncommitted changes. Please commit or stash them before syncing."; \
-		exit 1; \
-	fi
-
-	# Backup current state to a temporary branch
-	@echo "Creating backup branch '$(BACKUP_BRANCH)'..."
-	@$(GIT) branch $(BACKUP_BRANCH) > /dev/null 2>&1 || echo "Backup branch '$(BACKUP_BRANCH)' already exists."
-
-	# Fetch the latest changes from both private and public remotes
-	@echo "Fetching latest changes from 'private' and 'origin' remotes..."
-	@$(GIT) fetch private
-	@$(GIT) fetch origin
-
-	# Find the last common commit between the public and private branches
-	@echo "Determining the last common commit between 'origin/main' and 'private/main'..."
-	@LAST_COMMON_COMMIT=$$(git merge-base origin/main private/main) && \
-	echo "Last common commit is $$LAST_COMMON_COMMIT" && \
-
-	# Soft reset to the last common commit so changes are staged but history remains intact
-	@echo "Performing soft reset to the last common commit..."
-	@$(GIT) reset --soft $$LAST_COMMON_COMMIT
-
-	# Stage all changes for commit
-	@echo "Staging all changes for commit..."
-	@$(GIT) add -A
-
-	# Generate AI-powered commit message using your AI commit script (assuming it's already set up in poetry)
-	@echo "Generating AI-powered commit message..."
-	@PYTHONPATH=$(shell pwd) poetry run ai_commit
-
-	# Detect current branch and push if on 'main'
-	@echo "Detecting current branch to determine push behavior..."
-	@CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
-	if [ "$$CURRENT_BRANCH" = "main" ]; then \
-		echo "On 'main' branch. Pushing cleaned-up history to private repository..."; \
-		$(GIT) push private main; \
-		\
-		# Delete the backup branch after successful push
-		echo "Deleting backup branch '$(BACKUP_BRANCH)'..."; \
-		$(GIT) branch -d $(BACKUP_BRANCH) > /dev/null 2>&1 || echo "Backup branch '$(BACKUP_BRANCH)' could not be deleted. It might not exist or has unmerged changes."; \
-	else \
-		echo "Not on 'main' branch. Skipping push."; \
-	fi
-
-	@echo "Sync with public repository completed successfully."
+# Update poetry.lock without updating dependencies
+update-lock:
+	@echo "Updating poetry.lock without updating dependencies..."
+	@poetry lock --no-update
+	@echo "poetry.lock updated."

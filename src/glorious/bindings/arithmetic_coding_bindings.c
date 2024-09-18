@@ -1,4 +1,4 @@
-// arithmetic_coding_bindings.c
+// src/glorious/bindings/arithmetic_coding_bindings.c
 
 #define PY_SSIZE_T_CLEAN
 #include "arithmetic_coding_bindings.h"
@@ -132,7 +132,7 @@ PyMethodDef ArithmeticCodingMethods[] = {
 // Module definition
 struct PyModuleDef arithmeticcodingmodule = {
     PyModuleDef_HEAD_INIT,
-    "glorious",                               /* Module name */
+    "glorious._glorious",                     /* Module name */
     "Python bindings for arithmetic coding.", /* Module documentation */
     -1,                                       /* Size of per-interpreter state of the module */
     ArithmeticCodingMethods,
@@ -143,7 +143,7 @@ struct PyModuleDef arithmeticcodingmodule = {
 };
 
 // Module initialization
-PyMODINIT_FUNC PyInit_glorious(void)
+PyMODINIT_FUNC PyInit__glorious(void)
 {
   return PyModule_Create(&arithmeticcodingmodule);
 }
