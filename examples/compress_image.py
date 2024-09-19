@@ -1,67 +1,108 @@
 #!/usr/bin/env python3
 
-import io
+import argparse
+import sys
 import urllib.request
+
 import glorious
+from colorama import Fore, Style, init
+
+# Initialize colorama
+init(autoreset=True)
+
+# Constants
+BITS_PER_BYTE = 8
+DEFAULT_IMAGE_URL = "https://freight.cargo.site/t/original/i/238bba1a42d1f45eabd8b67d36149419f9890f53bc59562f756b6c9a854dfb30/MS_Merkel_Angela_CloseUp.jpg"
+DEFAULT_CONTEXT_LENGTH = 1000
+MIN_CONTEXT_LENGTH = 1
+MAX_CONTEXT_LENGTH = 10000
+
+
+def validate_url(url):
+    try:
+        result = urllib.parse.urlparse(url)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
+
+
+def validate_context_length(value):
+    ivalue = int(value)
+    if not MIN_CONTEXT_LENGTH <= ivalue <= MAX_CONTEXT_LENGTH:
+        raise argparse.ArgumentTypeError(
+            f"Context length must be between {MIN_CONTEXT_LENGTH} and {MAX_CONTEXT_LENGTH}"
+        )
+    return ivalue
 
 
 def download_image_to_memory(url):
-  """Downloads an image file from the provided URL and returns it as raw bytes."""
-  with urllib.request.urlopen(url) as response:
-    image_bytes = response.read()  # Read the image as raw bytes
-  return image_bytes
+    try:
+        with urllib.request.urlopen(url) as response:
+            return response.read()
+    except urllib.error.URLError as e:
+        print(f"{Fore.RED}Error downloading image: {e}{Style.RESET_ALL}")
+        sys.exit(1)
 
 
-def compress_image_data(image_data, bit_length, context_length):
-  """Compress the image data using glorious."""
-  encoded = glorious.encode(image_data, bit_length, context_length)
-  return encoded
+def main(url, context_length):
+    print(f"Downloading image from: {Fore.CYAN}{url}{Style.RESET_ALL}")
+    print(f"Using context length: {Fore.CYAN}{context_length}{Style.RESET_ALL}")
 
+    image_data = download_image_to_memory(url)
+    bit_length = len(image_data) * BITS_PER_BYTE
 
-def decompress_image_data(encoded_data, bit_length, context_length):
-  """Decompress the encoded image data using glorious."""
-  decoded = glorious.decode(encoded_data, bit_length, context_length)
-  return decoded
+    compressed_data = glorious.encode(image_data, bit_length, context_length)
+    decompressed_data = glorious.decode(compressed_data, bit_length, context_length)
 
+    if decompressed_data == image_data:
+        print(
+            f"{Fore.GREEN}Success! Decompressed data matches the original.{Style.RESET_ALL}"
+        )
+    else:
+        print(
+            f"{Fore.RED}Error: Decompressed data does not match the original.{Style.RESET_ALL}"
+        )
 
-def calculate_compression_ratio(original_data, compressed_data):
-  """Calculate the compression ratio based on the original and compressed data sizes."""
-  original_bits_per_byte = 8  # Fixed, since there are always 8 bits in a byte
-  compressed_bits_per_byte = len(compressed_data) * 8 / len(original_data)
-  return original_bits_per_byte, compressed_bits_per_byte
+    compressed_bits_per_byte = len(compressed_data) * BITS_PER_BYTE / len(image_data)
+    compression_ratio = BITS_PER_BYTE / compressed_bits_per_byte
+
+    print(f"Original bits per byte: {Fore.YELLOW}{BITS_PER_BYTE}{Style.RESET_ALL}")
+    print(
+        f"Compressed bits per byte: {Fore.YELLOW}{compressed_bits_per_byte:.2f}{Style.RESET_ALL}"
+    )
+    print(
+        f"Compression ratio: {Fore.GREEN if compression_ratio > 1 else Fore.RED}{compression_ratio:.2f}x{Style.RESET_ALL}"
+    )
 
 
 if __name__ == "__main__":
-  # Step 1: Use the provided image URL
-  image_url = "https://freight.cargo.site/t/original/i/238bba1a42d1f45eabd8b67d36149419f9890f53bc59562f756b6c9a854dfb30/MS_Merkel_Angela_CloseUp.jpg"
+    parser = argparse.ArgumentParser(
+        description="Compress and decompress an image using glorious."
+    )
+    parser.add_argument(
+        "-u",
+        "--url",
+        default=DEFAULT_IMAGE_URL,
+        type=str,
+        help=f"URL of the image to compress (default: {DEFAULT_IMAGE_URL})",
+    )
+    parser.add_argument(
+        "-c",
+        "--context",
+        type=validate_context_length,
+        default=DEFAULT_CONTEXT_LENGTH,
+        help=f"Context length for compression (default: {DEFAULT_CONTEXT_LENGTH}, min: {MIN_CONTEXT_LENGTH}, max: {MAX_CONTEXT_LENGTH})",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Increase output verbosity"
+    )
 
-  # Step 2: Download the image to memory
-  image_data = download_image_to_memory(image_url)
+    args = parser.parse_args()
 
-  # Step 3: Get the bit length (number of bits in the image data)
-  bit_length = len(image_data) * 8
+    if not validate_url(args.url):
+        parser.error(f"{Fore.RED}Invalid URL provided{Style.RESET_ALL}")
 
-  # Step 4: Set a reasonable context length for compression (e.g., 16 bits)
-  context_length = 1000
+    if args.verbose:
+        print(f"{Fore.BLUE}Verbose mode enabled{Style.RESET_ALL}")
 
-  # Step 5: Compress the image data
-  compressed_data = compress_image_data(image_data, bit_length, context_length)
-
-  # Step 6: Decompress the image data
-  decompressed_data = decompress_image_data(
-      compressed_data, bit_length, context_length
-  )
-
-  # Step 7: Check if decompressed data matches the original data
-  if decompressed_data == image_data:
-    print("Success! Decompressed data matches the original.")
-  else:
-    print("Error: Decompressed data does not match the original.")
-
-  # Step 8: Calculate and print the compression ratio (bits per byte)
-  original_bits_per_byte, compressed_bits_per_byte = calculate_compression_ratio(
-      image_data, compressed_data
-  )
-
-  print(f"Original bits per byte: {original_bits_per_byte}")
-  print(f"Compressed bits per byte: {compressed_bits_per_byte}")
+    main(args.url, args.context)

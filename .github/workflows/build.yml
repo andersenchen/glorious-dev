@@ -2,9 +2,9 @@ name: Build and Test
 
 on:
   push:
-    branches: "**"
+    branches: ["**"]
   pull_request:
-    branches: "**"
+    branches: ["main"]
 
 jobs:
   canary:
@@ -21,25 +21,24 @@ jobs:
           pip install tox tox-gh-actions
       - name: Run tests
         run: tox
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   build:
     needs: canary
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        include:
-          - os: ubuntu-latest
-            python-version: "3.9"
-          - os: ubuntu-latest
-            python-version: "3.12"
-          - os: windows-latest
-            python-version: "3.12"
-          - os: macos-latest
-            python-version: "3.12"
+        os:
+          [
+            "ubuntu-latest",
+            "ubuntu-22.04",
+            "ubuntu-20.04",
+            "windows-latest",
+            "windows-2019",
+            "macos-latest",
+            "macos-14",
+            "macos-13",
+          ]
+        python-version: ["3.9", "3.12"]
 
     steps:
       - uses: actions/checkout@v3
@@ -67,7 +66,3 @@ jobs:
             ${{ runner.os }}-tox-
       - name: Run tests
         run: tox
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
