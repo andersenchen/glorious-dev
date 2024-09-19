@@ -83,7 +83,6 @@ def get_extension_module() -> Extension:
                        "arithmetic_coding_bindings.c"),
           os.path.join("src", "glorious", "c", "src", "arithmetic_coding.c"),
           os.path.join("src", "glorious", "c", "src", "probability.c"),
-          os.path.join("src", "glorious", "c", "src", "utilities.c"),
       ],
       include_dirs=include_dirs,
       library_dirs=library_dirs,

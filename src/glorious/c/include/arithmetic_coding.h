@@ -6,17 +6,17 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "context.h"      // Include ContextContent
+#include "probability.h"  // Include the probability functions
+
 // Define the precision of the arithmetic coder.
-// Set to 31 to prevent undefined behavior with 32-bit types.
-// If you require higher precision, set to 48 or more and adjust types
-// accordingly.
 #ifndef PRECISION
 #define PRECISION 31
 #endif
 
 #define FIXED_SCALE (1 << 16)  // Fixed-point scaling factor (16 bits)
 #define MAX_CONTEXT_BYTES \
-  256  // Maximum context size in bytes (adjust as needed)
+  (256 * 1000)  // Maximum context size in bytes (adjust as needed)
 #define INITIAL_OUTPUT_CAPACITY \
   4096  // Initial buffer size to minimize reallocations
 
@@ -39,7 +39,19 @@ typedef struct {
                                               // a ring buffer
   size_t context_capacity;  // Size of the context buffer in bits
   size_t context_index;     // Current index in the ring buffer
+
+  size_t count_ones;  // Number of '1's in the current context
 } ArithmeticCoder;
+
+/**
+ * @brief Function pointer type for obtaining fixed-point probabilities based on
+ * context.
+ *
+ * @param context_content Pointer to the ContextContent struct.
+ * @return uint32_t Fixed-point probability of the current bit being '1', scaled
+ * by FIXED_SCALE.
+ */
+typedef uint32_t (*ProbabilityFunction)(const ContextContent *context_content);
 
 /**
  * @brief Performs arithmetic encoding on a sequence of bits using fixed-point
@@ -51,14 +63,12 @@ typedef struct {
  * stored. The caller is responsible for freeing this buffer.
  * @param context_length Length of the context in bits.
  * @param get_probability_fixed Function pointer to obtain the probability of
- * bit '1' given the context. It should return a fixed-point probability scaled
- * by FIXED_SCALE.
+ * bit '1' given the context.
  * @return size_t The size of the encoded output in bytes.
  */
 size_t arithmetic_encode(const uint8_t *sequence, size_t length,
                          uint8_t **encoded_output, size_t context_length,
-                         uint32_t (*get_probability_fixed)(
-                             const uint8_t *context, size_t context_length));
+                         ProbabilityFunction get_probability_fixed);
 
 /**
  * @brief Performs arithmetic decoding on an encoded byte sequence using
@@ -67,18 +77,16 @@ size_t arithmetic_encode(const uint8_t *sequence, size_t length,
  * @param encoded Pointer to the encoded byte array.
  * @param encoded_length Length of the encoded data in bytes.
  * @param decoded Pointer to the buffer where decoded bits will be stored
- *                (packed as bytes). The buffer should be pre-allocated by the
- * caller and should be large enough to hold the decoded bits.
+ * (packed as bytes). The buffer should be pre-allocated by the caller and
+ * should be large enough to hold the decoded bits.
  * @param decoded_length Number of bits to decode.
  * @param context_length Length of the context in bits.
  * @param get_probability_fixed Function pointer to obtain the probability of
- * bit '1' given the context. It should return a fixed-point probability scaled
- * by FIXED_SCALE.
+ * bit '1' given the context.
  */
 void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
                        uint8_t *decoded, size_t decoded_length,
                        size_t context_length,
-                       uint32_t (*get_probability_fixed)(
-                           const uint8_t *context, size_t context_length));
+                       ProbabilityFunction get_probability_fixed);
 
 #endif  // ARITHMETIC_CODING_H

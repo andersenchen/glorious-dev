@@ -9,34 +9,39 @@
 
 // Include the necessary C headers
 #include "arithmetic_coding.h"
+#include "context.h"  // Include ContextContent
 #include "probability.h"
 
-// Expose the get_probability_wrapper function
-uint32_t get_probability_wrapper(const uint8_t *context,
-                                 size_t context_length)
-{
-  return example_get_probability_fixed(context, context_length);
+/**
+ * @brief Wrapper function for getting the fixed-point probability.
+ *
+ * This function wraps the C-level probability function to match the expected
+ * signature for arithmetic encoding and decoding.
+ *
+ * @param context_content Pointer to the ContextContent struct.
+ * @return uint32_t Fixed-point probability of the current bit being '1', scaled
+ * by FIXED_SCALE.
+ */
+uint32_t get_probability_wrapper(const ContextContent *context_content) {
+  return example_get_probability_fixed(context_content);
 }
 
 // Python wrapper for arithmetic_encode with bit length support
-static PyObject *py_arithmetic_encode(PyObject *self, PyObject *args)
-{
-  (void)self; // Suppress unused parameter warning
+static PyObject *py_arithmetic_encode(PyObject *self, PyObject *args) {
+  (void)self;  // Suppress unused parameter warning
 
   const char *sequence;
   Py_ssize_t sequence_length;
-  Py_ssize_t sequence_bit_length; // New parameter for bit length
+  Py_ssize_t sequence_bit_length;  // New parameter for bit length
   Py_ssize_t context_length;
 
   // Parse Python arguments (now includes bit length)
   if (!PyArg_ParseTuple(args, "y#nn", &sequence, &sequence_length,
-                        &sequence_bit_length, &context_length))
-  {
+                        &sequence_bit_length, &context_length)) {
     return NULL;
   }
 
-  if (context_length <= 0)
-  {
+  if (context_length <= 0) {
     PyErr_SetString(PyExc_ValueError, "context_length must be positive.");
     return NULL;
   }
@@ -45,11 +50,10 @@ static PyObject *py_arithmetic_encode(PyObject *self, PyObject *args)
   uint8_t *encoded_output = NULL;
   size_t encoded_length = arithmetic_encode(
       (const uint8_t *)sequence,
-      (size_t)sequence_bit_length, // Use the bit length directly
+      (size_t)sequence_bit_length,  // Use the bit length directly
       &encoded_output, (size_t)context_length, get_probability_wrapper);
 
-  if (encoded_length == 0 || encoded_output == NULL)
-  {
+  if (encoded_length == 0 || encoded_output == NULL) {
     PyErr_SetString(PyExc_RuntimeError, "Encoding failed.");
     return NULL;
   }
@@ -61,24 +65,21 @@ static PyObject *py_arithmetic_encode(PyObject *self, PyObject *args)
 }
 
 // Python wrapper for arithmetic_decode with bit length support
-static PyObject *py_arithmetic_decode(PyObject *self, PyObject *args)
-{
-  (void)self; // Suppress unused parameter warning
+static PyObject *py_arithmetic_decode(PyObject *self, PyObject *args) {
+  (void)self;  // Suppress unused parameter warning
 
   const char *encoded;
   Py_ssize_t encoded_length;
-  Py_ssize_t decoded_bit_length; // New parameter for decoded bit length
+  Py_ssize_t decoded_bit_length;  // New parameter for decoded bit length
   Py_ssize_t context_length;
 
   // Parse Python arguments (includes decoded bit length)
   if (!PyArg_ParseTuple(args, "y#nn", &encoded, &encoded_length,
-                        &decoded_bit_length, &context_length))
-  {
+                        &decoded_bit_length, &context_length)) {
     return NULL;
   }
 
-  if (context_length <= 0)
-  {
+  if (context_length <= 0) {
     PyErr_SetString(PyExc_ValueError, "context_length must be positive.");
     return NULL;
   }
@@ -87,8 +88,7 @@ static PyObject *py_arithmetic_decode(PyObject *self, PyObject *args)
   size_t decoded_byte_length = (decoded_bit_length + 7) / 8;
   uint8_t *decoded_output =
       (uint8_t *)calloc(decoded_byte_length, sizeof(uint8_t));
-  if (!decoded_output)
-  {
+  if (!decoded_output) {
     PyErr_NoMemory();
     return NULL;
   }
@@ -126,7 +126,7 @@ PyMethodDef ArithmeticCodingMethods[] = {
      "  context_length (int): The length of the context used for decoding.\n\n"
      "Returns:\n"
      "  bytes: The decoded byte sequence."},
-    {NULL, NULL, 0, NULL} // Sentinel
+    {NULL, NULL, 0, NULL}  // Sentinel
 };
 
 // Module definition
@@ -134,7 +134,7 @@ struct PyModuleDef arithmeticcodingmodule = {
     PyModuleDef_HEAD_INIT,
     "glorious._glorious",                     /* Module name */
     "Python bindings for arithmetic coding.", /* Module documentation */
-    -1,                                       /* Size of per-interpreter state of the module */
+    -1, /* Size of per-interpreter state of the module */
     ArithmeticCodingMethods,
     NULL, /* m_slots */
     NULL, /* m_traverse */
@@ -143,7 +143,6 @@ struct PyModuleDef arithmeticcodingmodule = {
 };
 
 // Module initialization
-PyMODINIT_FUNC PyInit__glorious(void)
-{
+PyMODINIT_FUNC PyInit__glorious(void) {
   return PyModule_Create(&arithmeticcodingmodule);
 }

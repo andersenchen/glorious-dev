@@ -12,7 +12,7 @@ class TestArithmeticCodingBindings(unittest.TestCase):
     """Test encoding and decoding for a large sequence."""
     sequence = b"a" * (1000000 // 8)  # 1,000,000 bits (125,000 bytes)
     sequence_bit_length = len(sequence) * 8
-    context_length_big_test = 50
+    context_length_big_test = 100000
 
     encoded = glorious.encode(
         sequence, sequence_bit_length, context_length_big_test)

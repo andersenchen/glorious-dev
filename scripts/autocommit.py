@@ -28,15 +28,25 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 client = openai.OpenAI()
 
 # Constant format string for the prompt
-COMMIT_MESSAGE_PROMPT = """## GIT DIFF START
+COMMIT_MESSAGE_PROMPT = """## PREVIOUS COMMIT MESSAGES
+{previous_commits}
+## PREVIOUS COMMIT MESSAGES END
+
+
+## GIT DIFF START
 {diff}
 ## GIT DIFF END
 
-A commit message starts with a brief imperative summary (max 50 chars), optionally followed by a body explaining why and how, with lines up to 72characters.
 
-Write a GitHub commit message Jeff Dean would write if he saw this diff. Be realistic.
+# Your instructions:
+
+Write a GitHub commit message Jeff Dean would write if he saw this diff. Be realistic. Match the style of the previous commit messages.
+
+A commit message starts with a brief imperative summary (a strict maximum of 50 characters), optionally followed by a body explaining why and how, with lines up to 72 characters.
 
 GitHub commit messages do not support bold text or Markdown formatting. Your first line will be rendered as the title of the commit in plaintext, and the rest of the lines will be the body.
+
+Make sure to follow the instructions exactly, and make sure your commit message is extremely high quality and accurate.
 """
 
 
@@ -72,11 +82,34 @@ def get_git_diff_with_function_context(amend: bool = False) -> str:
     raise
 
 
-def generate_commit_message(diff: str, amend: bool = False) -> str:
+def get_previous_commits(num_commits: int = 5) -> str:
+  """Retrieves the previous commit messages.
+
+  Args:
+    num_commits: Number of previous commit messages to retrieve.
+
+  Returns:
+    A string containing the previous commit messages.
+
+  Raises:
+    subprocess.CalledProcessError: If the git command fails.
+  """
+  try:
+    return subprocess.check_output(
+        ["git", "log", f"-{num_commits}", "--pretty=format:%s%n%b%n"],
+        stderr=subprocess.STDOUT
+    ).decode("utf-8")
+  except subprocess.CalledProcessError as e:
+    print(f"Error executing git command: {e.output.decode('utf-8')}")
+    raise
+
+
+def generate_commit_message(diff: str, previous_commits: str, amend: bool = False) -> str:
   """Generates a commit message using OpenAI's language model in Google style.
 
   Args:
     diff: A string containing the git diff to base the commit message on.
+    previous_commits: A string containing the previous commit messages.
     amend: A boolean indicating whether the commit is amending a previous one.
 
   Returns:
@@ -93,8 +126,11 @@ def generate_commit_message(diff: str, amend: bool = False) -> str:
         model="o1-mini",
         messages=[
             {
-              "role": "user",
-              "content": COMMIT_MESSAGE_PROMPT.format(diff=diff),
+                "role": "user",
+                "content": COMMIT_MESSAGE_PROMPT.format(
+                    previous_commits=previous_commits,
+                    diff=diff
+                ),
             },
         ],
     )
@@ -129,7 +165,8 @@ def main() -> None:
       print("No changes to commit.")
       return
 
-    commit_message = generate_commit_message(diff, amend)
+    previous_commits = get_previous_commits()
+    commit_message = generate_commit_message(diff, previous_commits, amend)
 
     # Print the generated commit message
     print("\nGenerated commit message:")

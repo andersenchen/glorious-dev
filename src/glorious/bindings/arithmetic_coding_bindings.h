@@ -7,18 +7,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "context.h"      // Include ContextContent
+#include "probability.h"  // Include the probability functions
+
 /**
  * @brief Wrapper function for getting the fixed-point probability.
  *
  * This function wraps the C-level probability function to match the expected
  * signature for arithmetic encoding and decoding.
  *
- * @param context Pointer to the context bit array.
- * @param context_length Length of the context in bits.
+ * @param context_content Pointer to the ContextContent struct.
  * @return uint32_t Fixed-point probability of the current bit being '1', scaled
  * by FIXED_SCALE.
  */
-uint32_t get_probability_wrapper(const uint8_t *context, size_t context_length);
+uint32_t get_probability_wrapper(const ContextContent *context_content);
 
 /**
  * @brief Python wrapper for arithmetic_encode.
@@ -67,6 +69,6 @@ extern struct PyModuleDef arithmeticcodingmodule;
  *
  * @return PyObject* The initialized module object.
  */
-PyMODINIT_FUNC PyInit__glorious(void); // Updated to match C file
+PyMODINIT_FUNC PyInit__glorious(void);  // Updated to match C file
 
-#endif // ARITHMETIC_CODING_BINDINGS_H
+#endif  // ARITHMETIC_CODING_BINDINGS_H

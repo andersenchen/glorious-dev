@@ -1,4 +1,4 @@
-// arithmetic_coding.c
+// src/glorious/c/src/arithmetic_coding.c
 
 #include "arithmetic_coding.h"
 
@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "context.h"
 #include "probability.h"
 
 // -----------------------------
@@ -151,10 +152,12 @@ static inline void output_following_bits(ArithmeticCoder *coder, int bit) {
 }
 
 /**
- * @brief Updates the context using a ring buffer.
+ * @brief Updates the context using a ring buffer and maintains the count of
+ * '1's.
  *
- * Inserts a new bit into the context buffer at the current index and
- * updates the index in a circular manner.
+ * Inserts a new bit into the context buffer at the current index, updates the
+ * count of '1's based on the new and old bit, and updates the index in a
+ * circular manner.
  *
  * @param coder Pointer to the ArithmeticCoder instance.
  * @param new_bit The new bit to add (0 or 1).
@@ -168,6 +171,9 @@ static inline void update_context_ring_buffer(ArithmeticCoder *coder,
   size_t byte_pos = coder->context_index / 8;
   size_t bit_pos = 7 - (coder->context_index % 8);
 
+  // Retrieve the old bit value
+  int old_bit = (coder->context_buffer[byte_pos] & (1 << bit_pos)) ? 1 : 0;
+
   // Set or clear the bit at the current position
   if (new_bit) {
     coder->context_buffer[byte_pos] |= (1 << bit_pos);
@@ -175,40 +181,11 @@ static inline void update_context_ring_buffer(ArithmeticCoder *coder,
     coder->context_buffer[byte_pos] &= ~(1 << bit_pos);
   }
 
+  // Update the count of '1's
+  coder->count_ones += new_bit - old_bit;
+
   // Update the context index in a circular manner
   coder->context_index = (coder->context_index + 1) % coder->context_capacity;
-}
-
-/**
- * @brief Retrieves the current context as a byte array.
- *
- * Constructs a contiguous bit sequence from the ring buffer for use in
- * probability calculations.
- *
- * @param coder Pointer to the ArithmeticCoder instance.
- * @param context_length Length of the context in bits.
- * @param buffer Pointer to the preallocated buffer to store the context bits.
- */
-static inline void get_current_context_buffer(const ArithmeticCoder *coder,
-                                              size_t context_length,
-                                              uint8_t *buffer) {
-  if (context_length == 0) {
-    return;
-  }
-
-  size_t context_bytes = (context_length + 7) / 8;
-  memset(buffer, 0, context_bytes);  // Initialize buffer to zero
-
-  for (size_t i = 0; i < context_length; i++) {
-    size_t bit_pos = (coder->context_index + i) % context_length;
-    size_t byte = bit_pos / 8;
-    size_t bit = 7 - (bit_pos % 8);
-    int bit_value = (coder->context_buffer[byte] >> bit) & 1;
-
-    size_t dest_byte = i / 8;
-    size_t dest_bit = 7 - (i % 8);
-    buffer[dest_byte] |= (bit_value << dest_bit);
-  }
 }
 
 // -----------------------------
@@ -231,8 +208,7 @@ static inline void get_current_context_buffer(const ArithmeticCoder *coder,
  */
 size_t arithmetic_encode(const uint8_t *sequence, size_t length,
                          uint8_t **encoded_output, size_t context_length,
-                         uint32_t (*get_probability_fixed)(
-                             const uint8_t *context, size_t context_length)) {
+                         ProbabilityFunction get_probability_fixed) {
   // Precompute constants based on PRECISION
   const uint32_t TOTAL_FREQUENCY = 1U << PRECISION;  // Total range (e.g., 2^31)
   const uint32_t HALF = 1U << (PRECISION - 1);       // Half of the range
@@ -259,20 +235,24 @@ size_t arithmetic_encode(const uint8_t *sequence, size_t length,
          MAX_CONTEXT_BYTES);  // Initialize context to zero
   coder.context_capacity = context_length;
   coder.context_index = 0;
+  coder.count_ones = 0;  // Initialize count of '1's to zero
 
-  // Preallocate a buffer for current context
-  uint8_t current_context_buffer[MAX_CONTEXT_BYTES];
-  memset(current_context_buffer, 0, sizeof(current_context_buffer));
+  // Initialize ContextContent
+  ContextContent context_content;
+  context_content.count_ones = 0;
+  context_content.context_length = context_length;
 
   // Iterate over each bit in the input sequence
   for (size_t i = 0; i < length; i++) {
     // Extract the current bit to encode
     uint8_t bit = (sequence[i / 8] >> (7 - (i % 8))) & 1;
 
+    // Populate ContextContent with the current count of '1's
+    context_content.count_ones = coder.count_ones;
+
     // Obtain the probability of the current bit being '1' based on the context
-    get_current_context_buffer(&coder, context_length, current_context_buffer);
-    uint32_t p1_fixed = clamp_probability_fixed(
-        get_probability_fixed(current_context_buffer, context_length));
+    uint32_t p1_fixed =
+        clamp_probability_fixed(get_probability_fixed(&context_content));
     uint32_t p0_fixed = FIXED_SCALE - p1_fixed;
 
     // Scale probabilities to the total frequency range
@@ -374,8 +354,7 @@ size_t arithmetic_encode(const uint8_t *sequence, size_t length,
 void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
                        uint8_t *decoded, size_t decoded_length,
                        size_t context_length,
-                       uint32_t (*get_probability_fixed)(
-                           const uint8_t *context, size_t context_length)) {
+                       ProbabilityFunction get_probability_fixed) {
   // Precompute constants based on PRECISION
   const uint32_t TOTAL_FREQUENCY =
       1U << PRECISION;  // Total frequency range (e.g., 2^31)
@@ -399,10 +378,12 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
          MAX_CONTEXT_BYTES);  // Initialize context to zero
   coder.context_capacity = context_length;
   coder.context_index = 0;
+  coder.count_ones = 0;  // Initialize count of '1's to zero
 
-  // Preallocate a buffer for current context
-  uint8_t current_context_buffer[MAX_CONTEXT_BYTES];
-  memset(current_context_buffer, 0, sizeof(current_context_buffer));
+  // Initialize ContextContent
+  ContextContent context_content;
+  context_content.count_ones = 0;
+  context_content.context_length = context_length;
 
   size_t bit_index = 0;  // Initialize bit index for reading encoded data
 
@@ -415,10 +396,12 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
 
   // Iterate over each bit to decode
   for (size_t i = 0; i < decoded_length; i++) {
+    // Populate ContextContent with the current count of '1's
+    context_content.count_ones = coder.count_ones;
+
     // Obtain the probability of the current bit being '1' based on the context
-    get_current_context_buffer(&coder, context_length, current_context_buffer);
-    uint32_t p1_fixed = clamp_probability_fixed(
-        get_probability_fixed(current_context_buffer, context_length));
+    uint32_t p1_fixed =
+        clamp_probability_fixed(get_probability_fixed(&context_content));
     uint32_t p0_fixed = FIXED_SCALE - p1_fixed;
 
     // Scale probabilities to the total frequency range
@@ -492,6 +475,8 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
           (coder.value << 1) | read_bit(encoded, &bit_index, encoded_length);
     }
   }
+
+  // Free is not needed for decoded buffer as it's managed by the caller
 
   // Note: No memory to free for coder.output as it's not used in decoding
 }

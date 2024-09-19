@@ -14,9 +14,8 @@ keywords = ["arithmetic coding", "compression", "C", "Python", "bindings"]
 python = ">=3.9.0"
 openai = "^1.45.0"
 pathspec = "^0.12.1"
-pygments = "^2.17.0" # Corrected version for pygments
+pygments = "^2.17.0"
 setuptools = "^61.0"
-
 
 [tool.poetry.dev-dependencies]
 pytest = "^8.3.3"
@@ -25,10 +24,10 @@ pre-commit = "^2.20.0"
 tox = "^4.19.0"
 
 [tool.poetry.extras]
-examples = ["requests", "Pillow"]
+examples = ["requests", "Pillow"] # Ensure Pillow is installed with examples
 
 [tool.poetry.scripts]
-generate-tree = "scripts.generate_tree:main" # Renamed for consistency
+generate-tree = "scripts.generate_tree:main"
 ai_commit = "scripts.autocommit:main"
 
 [build-system]
@@ -36,4 +35,4 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.poetry.urls]
-documentation = "https://github.com/mister-brain/glorious/docs" # Update if you have documentation
+documentation = "https://github.com/mister-brain/glorious/docs"

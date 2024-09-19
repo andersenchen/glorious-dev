@@ -205,7 +205,7 @@ integration_tests:
 # Run compress_image.py script
 run_example: install
 	@echo "Installing necessary dependencies for compress_image.py..."
-	@poetry install --extras "examples" --no-interaction --no-ansi
+	@poetry install --extras "examples"
 	@echo "Dependencies installed."
 	@echo "Running compress_image.py..."
 	@poetry run $(PYTHON) $(COMPRESS_IMAGE_SCRIPT)
