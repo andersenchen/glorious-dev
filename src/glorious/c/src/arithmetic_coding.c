@@ -15,6 +15,18 @@
 // -----------------------------
 
 // -----------------------------
+// Compiler Optimization Hints
+// -----------------------------
+
+#if defined(__GNUC__) || defined(__clang__)
+#define LIKELY(x) (__builtin_expect((x), 1))
+#define UNLIKELY(x) (__builtin_expect((x), 0))
+#else
+#define LIKELY(x) (x)
+#define UNLIKELY(x) (x)
+#endif
+
+// -----------------------------
 // Static Inline Helper Functions
 // -----------------------------
 
@@ -24,19 +36,19 @@
  * This function reads a bit from the encoded byte array based on the current
  * bit index. If the end of the data is reached, it returns 0 by default.
  *
- * @param encoded Pointer to the encoded byte array.
+ * @param encoded Pointer to the encoded byte array. (Non-aliasing)
  * @param bit_index Pointer to the current bit index. This is updated after
  * reading.
  * @param encoded_length Length of the encoded data in bytes.
  * @return int The bit value (0 or 1). Returns 0 if end of data is reached.
  */
-static inline int read_bit(const uint8_t *encoded, size_t *bit_index,
+static inline int read_bit(const uint8_t *restrict encoded, size_t *bit_index,
                            size_t encoded_length) {
-  size_t byte_pos = *bit_index / 8;  // Determine the byte position
-  if (byte_pos >= encoded_length) {
+  size_t byte_pos = *bit_index >> 3;  // Equivalent to bit_index / 8
+  if (UNLIKELY(byte_pos >= encoded_length)) {
     return 0;  // End of data reached; default to 0
   }
-  int bit = (encoded[byte_pos] >> (7 - (*bit_index % 8))) &
+  int bit = (encoded[byte_pos] >> (7 - (*bit_index & 7))) &
             1;     // Extract the desired bit
   (*bit_index)++;  // Move to the next bit
   return bit;
@@ -48,17 +60,23 @@ static inline int read_bit(const uint8_t *encoded, size_t *bit_index,
  * If the current output buffer cannot accommodate additional bytes, it is
  * resized.
  *
- * @param coder Pointer to the ArithmeticCoder instance.
+ * @param coder Pointer to the ArithmeticCoder instance. (Non-aliasing)
  * @param additional Number of additional bytes to accommodate.
  */
-static inline void ensure_output_capacity(ArithmeticCoder *coder,
+static inline void ensure_output_capacity(ArithmeticCoder *restrict coder,
                                           size_t additional) {
-  if (coder->output_size + additional > coder->output_capacity) {
-    size_t new_capacity = coder->output_capacity * 2;
-    if (new_capacity < coder->output_size + additional)
-      new_capacity = coder->output_size + additional;
+  size_t required = coder->output_size + additional;
+  if (UNLIKELY(required > coder->output_capacity)) {
+    size_t new_capacity = coder->output_capacity ? coder->output_capacity
+                                                 : INITIAL_OUTPUT_CAPACITY;
+    while (new_capacity < required) {
+      new_capacity <<= 1;  // Equivalent to new_capacity *= 2
+      if (UNLIKELY(new_capacity == 0)) {
+        new_capacity = INITIAL_OUTPUT_CAPACITY;
+      }
+    }
     uint8_t *new_output = realloc(coder->output, new_capacity);
-    if (!new_output) {
+    if (UNLIKELY(!new_output)) {
       perror("Realloc failed");
       exit(EXIT_FAILURE);
     }
@@ -74,19 +92,18 @@ static inline void ensure_output_capacity(ArithmeticCoder *coder,
  * and increments the bit_count. When bit_count reaches 8, the buffer is flushed
  * to the output array. If the output buffer is full, it is resized.
  *
- * @param coder Pointer to the ArithmeticCoder instance.
+ * @param coder Pointer to the ArithmeticCoder instance. (Non-aliasing)
  * @param bit The bit to output (0 or 1).
  */
-static inline void output_bit(ArithmeticCoder *coder, int bit) {
-  // Shift the bit_buffer left by 1 and add the new bit (ensuring it's only 0 or
-  // 1)
+static inline void output_bit(ArithmeticCoder *restrict coder, int bit) {
+  // Shift the bit_buffer left by 1 and add the new bit
   coder->bit_buffer = (coder->bit_buffer << 1) | (bit & 1);
   coder->bit_count++;  // Increment the bit count
 
   // If the bit_buffer is full (8 bits), flush it to the output
-  if (coder->bit_count == 8) {
+  if (LIKELY(coder->bit_count == 8)) {
     ensure_output_capacity(coder, 1);
-    coder->output[coder->output_size++] = coder->bit_buffer & 0xFF;
+    coder->output[coder->output_size++] = (uint8_t)coder->bit_buffer;
     coder->bit_buffer = 0;
     coder->bit_count = 0;
   }
@@ -99,10 +116,10 @@ static inline void output_bit(ArithmeticCoder *coder, int bit) {
  * If there are bits left in the bit_buffer that don't make up a full byte,
  * this function pads them with zeros and appends the final byte to the output.
  *
- * @param coder Pointer to the ArithmeticCoder instance.
+ * @param coder Pointer to the ArithmeticCoder instance. (Non-aliasing)
  */
-static inline void flush_output(ArithmeticCoder *coder) {
-  if (coder->bit_count > 0) {
+static inline void flush_output(ArithmeticCoder *restrict coder) {
+  if (LIKELY(coder->bit_count > 0)) {
     // Pad the remaining bits with zeros by shifting left
     coder->bit_buffer <<= (8 - coder->bit_count);
 
@@ -110,7 +127,7 @@ static inline void flush_output(ArithmeticCoder *coder) {
     ensure_output_capacity(coder, 1);
 
     // Append the final byte
-    coder->output[coder->output_size++] = coder->bit_buffer & 0xFF;
+    coder->output[coder->output_size++] = (uint8_t)coder->bit_buffer;
 
     // Reset the buffer
     coder->bit_buffer = 0;
@@ -141,11 +158,12 @@ static inline uint32_t clamp_probability_fixed(uint32_t p1_fixed) {
  * outputted after a rescaling event. This function handles that by outputting
  * the specified bit multiple times.
  *
- * @param coder Pointer to the ArithmeticCoder instance.
+ * @param coder Pointer to the ArithmeticCoder instance. (Non-aliasing)
  * @param bit The bit to output (0 or 1).
  */
-static inline void output_following_bits(ArithmeticCoder *coder, int bit) {
-  while (coder->bits_to_follow > 0) {
+static inline void output_following_bits(ArithmeticCoder *restrict coder,
+                                         int bit) {
+  while (LIKELY(coder->bits_to_follow > 0)) {
     output_bit(coder, bit);
     coder->bits_to_follow--;
   }
@@ -159,33 +177,32 @@ static inline void output_following_bits(ArithmeticCoder *coder, int bit) {
  * count of '1's based on the new and old bit, and updates the index in a
  * circular manner.
  *
- * @param coder Pointer to the ArithmeticCoder instance.
+ * @param coder Pointer to the ArithmeticCoder instance. (Non-aliasing)
  * @param new_bit The new bit to add (0 or 1).
  */
-static inline void update_context_ring_buffer(ArithmeticCoder *coder,
+static inline void update_context_ring_buffer(ArithmeticCoder *restrict coder,
                                               int new_bit) {
-  if (coder->context_capacity == 0) {
-    return;  // No context to update
+  if (LIKELY(coder->context_capacity > 0)) {
+    size_t byte_pos = coder->context_index >> 3;      // Equivalent to /8
+    size_t bit_pos = 7 - (coder->context_index & 7);  // Equivalent to %8
+
+    // Retrieve the old bit value
+    int old_bit = (coder->context_buffer[byte_pos] >> bit_pos) & 1;
+
+    // Set or clear the bit at the current position using precomputed mask
+    coder->context_buffer[byte_pos] =
+        (coder->context_buffer[byte_pos] & ~(1U << bit_pos)) |
+        ((new_bit & 1) << bit_pos);
+
+    // Update the count of '1's
+    coder->count_ones += (uint32_t)new_bit - (uint32_t)old_bit;
+
+    // Update the context index in a circular manner
+    coder->context_index += 1;
+    if (UNLIKELY(coder->context_index >= coder->context_capacity)) {
+      coder->context_index -= coder->context_capacity;
+    }
   }
-
-  size_t byte_pos = coder->context_index / 8;
-  size_t bit_pos = 7 - (coder->context_index % 8);
-
-  // Retrieve the old bit value
-  int old_bit = (coder->context_buffer[byte_pos] & (1 << bit_pos)) ? 1 : 0;
-
-  // Set or clear the bit at the current position
-  if (new_bit) {
-    coder->context_buffer[byte_pos] |= (1 << bit_pos);
-  } else {
-    coder->context_buffer[byte_pos] &= ~(1 << bit_pos);
-  }
-
-  // Update the count of '1's
-  coder->count_ones += new_bit - old_bit;
-
-  // Update the context index in a circular manner
-  coder->context_index = (coder->context_index + 1) % coder->context_capacity;
 }
 
 // -----------------------------
@@ -195,7 +212,7 @@ static inline void update_context_ring_buffer(ArithmeticCoder *coder,
 /**
  * @brief Encodes a sequence of bits using arithmetic coding.
  *
- * @param sequence Pointer to the input bit sequence.
+ * @param sequence Pointer to the input bit sequence. (Non-aliasing)
  * @param length Number of bits in the input sequence.
  * @param encoded_output Pointer to the buffer where encoded data will be
  * stored. Memory is allocated within the function and should be freed by the
@@ -206,7 +223,7 @@ static inline void update_context_ring_buffer(ArithmeticCoder *coder,
  * by FIXED_SCALE.
  * @return size_t The size of the encoded output in bytes.
  */
-size_t arithmetic_encode(const uint8_t *sequence, size_t length,
+size_t arithmetic_encode(const uint8_t *restrict sequence, size_t length,
                          uint8_t **encoded_output, size_t context_length,
                          ProbabilityFunction get_probability_fixed) {
   // Precompute constants based on PRECISION
@@ -216,13 +233,11 @@ size_t arithmetic_encode(const uint8_t *sequence, size_t length,
   const uint32_t THREE_QUARTER =
       3U << (PRECISION - 2);  // Three quarters of the range
 
-  // Initialize ArithmeticCoder
-  ArithmeticCoder coder;
-  coder.low = 0;
+  // Initialize ArithmeticCoder using compound literal
+  ArithmeticCoder coder = {0};
   coder.high = TOTAL_FREQUENCY - 1;
-  coder.value = 0;  // Not used in encoding
   coder.output = malloc(INITIAL_OUTPUT_CAPACITY);
-  if (!coder.output) {
+  if (UNLIKELY(!coder.output)) {
     perror("Initial malloc failed");
     exit(EXIT_FAILURE);
   }
@@ -238,14 +253,13 @@ size_t arithmetic_encode(const uint8_t *sequence, size_t length,
   coder.count_ones = 0;  // Initialize count of '1's to zero
 
   // Initialize ContextContent
-  ContextContent context_content;
-  context_content.count_ones = 0;
+  ContextContent context_content = {0};
   context_content.context_length = context_length;
 
   // Iterate over each bit in the input sequence
   for (size_t i = 0; i < length; i++) {
     // Extract the current bit to encode
-    uint8_t bit = (sequence[i / 8] >> (7 - (i % 8))) & 1;
+    uint8_t bit = (sequence[i >> 3] >> (7 - (i & 7))) & 1;
 
     // Populate ContextContent with the current count of '1's
     context_content.count_ones = coder.count_ones;
@@ -256,8 +270,9 @@ size_t arithmetic_encode(const uint8_t *sequence, size_t length,
     uint32_t p0_fixed = FIXED_SCALE - p1_fixed;
 
     // Scale probabilities to the total frequency range
-    uint32_t scaled_p0 = ((uint64_t)p0_fixed * TOTAL_FREQUENCY) / FIXED_SCALE;
-    if (scaled_p0 >= TOTAL_FREQUENCY) {
+    uint32_t scaled_p0 =
+        (uint32_t)(((uint64_t)p0_fixed * TOTAL_FREQUENCY) / FIXED_SCALE);
+    if (UNLIKELY(scaled_p0 >= TOTAL_FREQUENCY)) {
       scaled_p0 = TOTAL_FREQUENCY - 1;
     }
 
@@ -271,41 +286,37 @@ size_t arithmetic_encode(const uint8_t *sequence, size_t length,
           coder.low + ((uint64_t)range * scaled_p0) / TOTAL_FREQUENCY - 1;
     } else {
       // For bit '1', adjust the lower bound
-      coder.low = coder.low + ((uint64_t)range * scaled_p0) / TOTAL_FREQUENCY;
+      coder.low += ((uint64_t)range * scaled_p0) / TOTAL_FREQUENCY;
     }
 
     // Renormalization: Shift the range until the high and low share the same
     // top bits
-    while (1) {
+    do {
       if (coder.high < HALF) {
         // The range is entirely in the lower half
         // Output a '0' bit and handle any following bits
         output_bit(&coder, 0);
         output_following_bits(&coder, 1);
-        coder.low <<= 1;  // Shift low left by 1
-        coder.high =
-            (coder.high << 1) | 1;  // Shift high left by 1 and set the LSB
+        coder.low <<= 1;
+        coder.high = (coder.high << 1) | 1;
       } else if (coder.low >= HALF) {
         // The range is entirely in the upper half
         // Output a '1' bit and handle any following bits
         output_bit(&coder, 1);
         output_following_bits(&coder, 0);
-        coder.low = (coder.low - HALF) << 1;  // Adjust low and shift left by 1
-        coder.high = ((coder.high - HALF) << 1) |
-                     1;  // Adjust high, shift left, and set LSB
+        coder.low = (coder.low - HALF) << 1;
+        coder.high = ((coder.high - HALF) << 1) | 1;
       } else if (coder.low >= QUARTER && coder.high < THREE_QUARTER) {
         // The range is in the middle half
         // Increment bits_to_follow and adjust the range
         coder.bits_to_follow++;
-        coder.low = (coder.low - QUARTER)
-                    << 1;  // Remove the lower quarter and shift left
-        coder.high = ((coder.high - QUARTER) << 1) |
-                     1;  // Remove the lower quarter, shift left, and set LSB
+        coder.low = (coder.low - QUARTER) << 1;
+        coder.high = ((coder.high - QUARTER) << 1) | 1;
       } else {
         // No renormalization needed
         break;
       }
-    }
+    } while (1);  // Continue until no more renormalization is needed
 
     // Update the context with the current bit using the ring buffer
     update_context_ring_buffer(&coder, bit);
@@ -341,18 +352,19 @@ size_t arithmetic_encode(const uint8_t *sequence, size_t length,
 /**
  * @brief Decodes a sequence of bits encoded using arithmetic coding.
  *
- * @param encoded Pointer to the encoded byte array.
+ * @param encoded Pointer to the encoded byte array. (Non-aliasing)
  * @param encoded_length Length of the encoded data in bytes.
  * @param decoded Pointer to the buffer where decoded bits will be stored.
  *                The buffer should be preallocated by the caller.
+ * (Non-aliasing)
  * @param decoded_length Number of bits to decode.
  * @param context_length Length of the context in bits.
  * @param get_probability_fixed Function pointer to obtain the probability of
  * bit '1' given the context. It should return a fixed-point probability scaled
  * by FIXED_SCALE.
  */
-void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
-                       uint8_t *decoded, size_t decoded_length,
+void arithmetic_decode(const uint8_t *restrict encoded, size_t encoded_length,
+                       uint8_t *restrict decoded, size_t decoded_length,
                        size_t context_length,
                        ProbabilityFunction get_probability_fixed) {
   // Precompute constants based on PRECISION
@@ -363,14 +375,11 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
   const uint32_t THREE_QUARTER =
       3U << (PRECISION - 2);  // Three quarters of the range
 
-  // Initialize ArithmeticCoder
-  ArithmeticCoder coder;
+  // Initialize ArithmeticCoder using compound literal
+  ArithmeticCoder coder = {0};
   coder.low = 0;
   coder.high = TOTAL_FREQUENCY - 1;
   coder.value = 0;
-  coder.output = NULL;        // Not used in decoding
-  coder.output_size = 0;      // Not used in decoding
-  coder.output_capacity = 0;  // Not used in decoding
   coder.bits_to_follow = 0;
   coder.bit_buffer = 0;
   coder.bit_count = 0;
@@ -381,8 +390,7 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
   coder.count_ones = 0;  // Initialize count of '1's to zero
 
   // Initialize ContextContent
-  ContextContent context_content;
-  context_content.count_ones = 0;
+  ContextContent context_content = {0};
   context_content.context_length = context_length;
 
   size_t bit_index = 0;  // Initialize bit index for reading encoded data
@@ -405,8 +413,9 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
     uint32_t p0_fixed = FIXED_SCALE - p1_fixed;
 
     // Scale probabilities to the total frequency range
-    uint32_t scaled_p0 = ((uint64_t)p0_fixed * TOTAL_FREQUENCY) / FIXED_SCALE;
-    if (scaled_p0 >= TOTAL_FREQUENCY) {
+    uint32_t scaled_p0 =
+        (uint32_t)(((uint64_t)p0_fixed * TOTAL_FREQUENCY) / FIXED_SCALE);
+    if (UNLIKELY(scaled_p0 >= TOTAL_FREQUENCY)) {
       scaled_p0 = TOTAL_FREQUENCY - 1;
     }
 
@@ -414,8 +423,11 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
     uint32_t range = coder.high - coder.low + 1;
 
     // Calculate the scaled value which determines the current bit
-    uint64_t scaled_value =
-        ((uint64_t)(coder.value - coder.low + 1) * TOTAL_FREQUENCY - 1) / range;
+    // Optimize the calculation by rearranging operations
+    uint64_t temp = (uint64_t)(coder.value - coder.low + 1);
+    temp *= TOTAL_FREQUENCY;
+    temp -= 1;
+    uint32_t scaled_value = (uint32_t)(temp / range);
 
     uint8_t bit;
     if (scaled_value < scaled_p0) {
@@ -431,13 +443,13 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
       coder.low += ((uint64_t)range * scaled_p0) / TOTAL_FREQUENCY;
     }
 
-    // Set the decoded bit in the output buffer
+    // Set the decoded bit in the output buffer using precomputed masks
     if (bit) {
-      decoded[i / 8] |=
-          (1 << (7 - (i % 8)));  // Set the corresponding bit to '1'
+      decoded[i >> 3] |=
+          (1U << (7 - (i & 7)));  // Set the corresponding bit to '1'
     } else {
-      decoded[i / 8] &=
-          ~(1 << (7 - (i % 8)));  // Ensure the corresponding bit is '0'
+      decoded[i >> 3] &=
+          ~(1U << (7 - (i & 7)));  // Ensure the corresponding bit is '0'
     }
 
     // Update the context with the decoded bit using the ring buffer
@@ -445,7 +457,7 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
 
     // Renormalization: Shift the range until the high and low share the same
     // top bits
-    while (1) {
+    do {
       if (coder.high < HALF) {
         // The range is entirely in the lower half
         // No adjustment needed for value
@@ -473,10 +485,8 @@ void arithmetic_decode(const uint8_t *encoded, size_t encoded_length,
       // Shift the value left and read the next bit from the encoded data
       coder.value =
           (coder.value << 1) | read_bit(encoded, &bit_index, encoded_length);
-    }
+    } while (1);  // Continue until no more renormalization is needed
   }
 
-  // Free is not needed for decoded buffer as it's managed by the caller
-
-  // Note: No memory to free for coder.output as it's not used in decoding
+  // No memory to free for coder.output as it's not used in decoding
 }
