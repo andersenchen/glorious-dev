@@ -2,14 +2,14 @@ name: Build and Test
 
 on:
   push:
-    branches: ["**"]
+    branches:
+      - "**"
   pull_request:
-    branches: ["main"]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build_3_12_linux:
-    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -57,7 +57,7 @@ jobs:
           args: --all
 
   build_python:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -100,7 +100,7 @@ jobs:
         run: tox
 
   build_rust:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
