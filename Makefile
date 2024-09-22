@@ -69,6 +69,11 @@ CSOURCES := \
 # Python Module Name
 PYTHON_MODULE_NAME := glorious
 
+# Rust-specific variables
+CARGO := cargo
+RUST_SRCDIR := rust_code
+ARITHMETIC_CODING_DEMO_DIR := arithmetic_coding_demo
+
 # =============================================================================
 #                                 Targets
 # =============================================================================
@@ -76,10 +81,11 @@ PYTHON_MODULE_NAME := glorious
 # Declare phony targets to avoid conflicts with files of the same name
 .PHONY: all clean install wheel test unit_tests integration_tests deps \
         valgrind-python leaks-python examples run_c \
-        check-poetry check-lock update-lock build_ext tree ship
+        check-poetry check-lock update-lock build_ext tree ship \
+        rust-check rust-clippy rust-fmt rust-test rust-build rust-all
 
 # Default target: Executes a sequence of essential build steps
-all: check-python check-poetry check-lock build_ext install test
+all: check-python check-poetry check-lock build_ext install test rust-all
 
 # -------------------------------------------------------------------------
 # Setup and Installation
@@ -176,6 +182,11 @@ endif
 	@echo "Removing C program executable..."
 	@$(RM) $(COUTPUT) 2>/dev/null || echo "C program executable not found."
 
+	@echo "Cleaning Rust build artifacts..."
+	@(cd $(RUST_SRCDIR) && $(CARGO) clean)
+	@(cd $(ARITHMETIC_CODING_DEMO_DIR) && $(CARGO) clean)
+	@$(CARGO) clean
+
 	@echo "Clean complete."
 
 # -------------------------------------------------------------------------
@@ -269,7 +280,7 @@ $(COUTPUT): $(CSOURCES) $(INCDIR)/arithmetic_coding.h $(INCDIR)/probability.h
 # Generate a tree structure of the project, excluding specified directories/files
 tree:
 	@echo "Generating tree structure..."
-	@tree -a -I '.git|dist|*.egg-info|build|.venv|__pycache__|*.py[cod]|*.so|*.o|*.pyd|*.dll' --gitignore -f -s -h --si
+	@tree -a -I '.git|dist|*.egg-info|build|.venv|__pycache__|*.py[cod]|*.so|*.o|*.pyd|*.dll|target' --gitignore -f -s -h --si
 
 # -------------------------------------------------------------------------
 # Version Control and Deployment
@@ -284,6 +295,44 @@ update-lock:
 	@echo "Updating poetry.lock without updating dependencies..."
 	@poetry lock --no-update
 	@echo "poetry.lock updated."
+
+# -------------------------------------------------------------------------
+# Rust-specific targets
+# -------------------------------------------------------------------------
+
+# Run 'cargo check' on all Rust projects
+rust-check:
+	@echo "Running 'cargo check' on all Rust projects..."
+	@(cd $(RUST_SRCDIR) && $(CARGO) check)
+	@(cd $(ARITHMETIC_CODING_DEMO_DIR) && $(CARGO) check)
+	@$(CARGO) check
+
+# Run Clippy on all Rust projects
+rust-clippy:
+	@echo "Running Clippy on all Rust projects..."
+	@$(CARGO) clippy --fix --allow-dirty
+
+# Format Rust code
+rust-fmt:
+	@echo "Formatting Rust code..."
+	@$(CARGO) fmt --all
+
+# Run Rust tests
+rust-test:
+	@echo "Running Rust tests..."
+	@(cd $(RUST_SRCDIR) && $(CARGO) test)
+	@(cd $(ARITHMETIC_CODING_DEMO_DIR) && $(CARGO) test)
+	@$(CARGO) test
+
+# Build Rust projects
+rust-build:
+	@echo "Building Rust projects..."
+	@(cd $(RUST_SRCDIR) && $(CARGO) build)
+	@(cd $(ARITHMETIC_CODING_DEMO_DIR) && $(CARGO) build)
+	@$(CARGO) build
+
+# Run all Rust-related tasks
+rust-all: rust-check rust-clippy rust-fmt rust-test rust-build
 
 # =============================================================================
 # End of Makefile

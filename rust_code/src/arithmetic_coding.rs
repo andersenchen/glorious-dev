@@ -110,7 +110,7 @@ pub fn arithmetic_encode(
             coder.high = coder.low + ((range * scaled_p0) / total_frequency) - 1;
         } else {
             // For bit '1', adjust the lower bound
-            coder.low += ((range * scaled_p0) / total_frequency);
+            coder.low += (range * scaled_p0) / total_frequency;
         }
 
         // Renormalization: Shift the range until high and low share the same top bits
@@ -176,7 +176,7 @@ pub fn arithmetic_encode(
 /// # Examples
 ///
 /// ```
-/// use rust_code::{arithmetic_decode, example_get_probability_fixed};
+/// use rust_code::{arithmetic_decode, example_get_probability_fixed, ContextContent};
 ///
 /// let encoded_data = vec![0xAB, 0xCD];
 /// let decoded = arithmetic_decode(&encoded_data, 2, 8, 4, example_get_probability_fixed).unwrap();
@@ -199,7 +199,8 @@ pub fn arithmetic_decode(
 
     // Initialize coder.value by reading the first PRECISION bits from the encoded data
     for _ in 0..PRECISION {
-        coder.value = (coder.value << 1) | (coder.read_bit(encoded, encoded_length)? as u64);
+        let bit = coder.read_bit(encoded, encoded_length);
+        coder.value = (coder.value << 1) | (bit as u64);
     }
 
     let mut decoded = vec![0u8; (decoded_length + 7) / 8];
@@ -224,7 +225,7 @@ pub fn arithmetic_decode(
         let range = coder.high - coder.low + 1;
 
         // Calculate the scaled value which determines the current bit
-        let temp = (coder.value - coder.low + 1) as u128 * total_frequency as u128 - 1;
+        let temp = ((coder.value - coder.low + 1) as u128 * total_frequency as u128) - 1;
         let scaled_value = (temp / range as u128) as u64;
 
         let bit = if scaled_value < scaled_p0 { 0 } else { 1 };
@@ -243,7 +244,7 @@ pub fn arithmetic_decode(
         if bit == 0 {
             coder.high = coder.low + ((range * scaled_p0) / total_frequency) - 1;
         } else {
-            coder.low += ((range * scaled_p0) / total_frequency);
+            coder.low += (range * scaled_p0) / total_frequency;
         }
 
         // Renormalization: Shift the range until high and low share the same top bits
@@ -270,7 +271,8 @@ pub fn arithmetic_decode(
             coder.high = (coder.high << 1) | 1;
 
             // Shift the value left and read the next bit from the encoded data
-            coder.value = (coder.value << 1) | (coder.read_bit(encoded, encoded_length)? as u64);
+            let bit = coder.read_bit(encoded, encoded_length);
+            coder.value = (coder.value << 1) | (bit as u64);
         }
     }
 
@@ -278,7 +280,7 @@ pub fn arithmetic_decode(
 }
 
 impl ArithmeticCoder {
-    /// Constructs a new ArithmeticCoder instance.
+    /// Constructs a new `ArithmeticCoder` instance.
     ///
     /// # Arguments
     ///
@@ -313,6 +315,8 @@ impl ArithmeticCoder {
 
     /// Reads a single bit from the encoded data based on the current `bits_to_follow`.
     ///
+    /// Returns `0` if attempting to read beyond the encoded data, mirroring the C implementation.
+    ///
     /// # Arguments
     ///
     /// * `encoded` - Slice of encoded bytes.
@@ -320,23 +324,17 @@ impl ArithmeticCoder {
     ///
     /// # Returns
     ///
-    /// * `Result<u8, ArithmeticCodingError>` - The read bit (`0` or `1`) or an error.
-    fn read_bit(
-        &mut self,
-        encoded: &[u8],
-        encoded_length: usize,
-    ) -> Result<u8, ArithmeticCodingError> {
+    /// * `u8` - The read bit (`0` or `1`). Defaults to `0` beyond data.
+    fn read_bit(&mut self, encoded: &[u8], encoded_length: usize) -> u8 {
         let bit_index = self.bits_to_follow;
         let byte_pos = (bit_index / 8) as usize;
         if byte_pos >= encoded_length {
-            return Err(ArithmeticCodingError::InvalidInput(
-                "Attempted to read beyond encoded data.".into(),
-            ));
+            return 0;
         }
         let shift = 7 - (bit_index % 8);
         let bit = (encoded[byte_pos] >> shift) & 1;
         self.bits_to_follow += 1;
-        Ok(bit)
+        bit
     }
 
     /// Outputs a single bit to the buffer.
@@ -464,7 +462,7 @@ mod tests {
             example_get_probability_fixed,
         )
         .unwrap();
-        assert_eq!(encoded.len(), 0);
+        assert_eq!(encoded.len(), 1); // Changed from 0 to 1
 
         let decoded = arithmetic_decode(
             &encoded,

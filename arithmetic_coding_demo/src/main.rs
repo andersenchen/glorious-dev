@@ -1,7 +1,6 @@
 // arithmetic_coding_demo/src/main.rs
 
 use rust_code::{arithmetic_decode, arithmetic_encode, example_get_probability_fixed};
-use std::io::{self, Write};
 
 /// Helper function to print a buffer in binary format.
 ///

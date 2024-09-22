@@ -1,7 +1,6 @@
 // rust_code/src/probability.rs
 
 /// Fixed-point scaling factor.
-/// Must be consistent across all modules.
 pub const FIXED_SCALE: u32 = 1 << 16;
 
 /// Structure representing the context content.
@@ -16,17 +15,14 @@ pub type ProbabilityFunction = fn(&ContextContent) -> u32;
 
 /// Optimized function to obtain the fixed-point probability of bit '1'.
 ///
-/// This function replaces floating-point arithmetic with integer operations
-/// to enhance performance while maintaining behavior.
-///
 /// # Arguments
 ///
-/// * `context_content` - Reference to the ContextContent structure containing
+/// * `context_content` - Reference to the `ContextContent` structure containing
 ///                        context length and count of '1's.
 ///
 /// # Returns
 ///
-/// * `u32` - Fixed-point probability of bit '1', scaled by FIXED_SCALE.
+/// * `u32` - Fixed-point probability of bit '1', scaled by `FIXED_SCALE`.
 pub fn example_get_probability_fixed(context_content: &ContextContent) -> u32 {
     let context_length = context_content.context_length;
     let count_ones = context_content.count_ones;
