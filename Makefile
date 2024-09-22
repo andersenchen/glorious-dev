@@ -322,9 +322,6 @@ rust-check:
 rust-clippy:
 	@echo "Running Clippy on Rust project with strict lints..."
 	@(cd $(RUST_SRCDIR) && RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy $(CARGO_COMMON_FLAGS) -- -W clippy::all -W clippy::pedantic)
-# -------------------------------------------------------------------------
-# Rust-specific targets
-# -------------------------------------------------------------------------
 
 # Define Rust flags (less strict)
 RUSTFLAGS := -W warnings
