@@ -1,0 +1,9 @@
+# rust_code/Cargo.toml
+
+[package]
+name = "rust_code"
+version = "0.1.0"
+edition = "2021"
+description = "Arithmetic coding implementation in Rust."
+
+[dependencies]

@@ -1,0 +1,10 @@
+# arithmetic_coding_demo/Cargo.toml
+
+[package]
+name = "arithmetic_coding_demo"
+version = "0.1.0"
+edition = "2021"
+description = "Demonstrates arithmetic coding in Rust."
+
+[dependencies]
+rust_code = { path = "../rust_code" }

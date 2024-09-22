@@ -72,3 +72,14 @@ Thumbs.db
 
 # Mypy cache
 .mypy_cache/
+
+# Rust-specific
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Rust profiling and debugging
+*.profraw
+flamegraph.svg
+perf.data
+perf.data.old
