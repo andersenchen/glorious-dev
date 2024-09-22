@@ -35,22 +35,39 @@ jobs:
           key: ${{ runner.os }}-tox-${{ hashFiles('tox.ini') }}
           restore-keys: |
             ${{ runner.os }}-tox-
-      - name: Run tests
+      - name: Run Python tests
         run: tox
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run Rust tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all
 
   build_all:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [
+        os:
+          [
             "ubuntu-latest",
-            # "ubuntu-22.04",
             "ubuntu-20.04",
             "windows-latest",
             "windows-2019",
             "macos-latest",
-            # "macos-14",
             "macos-13",
           ]
         python-version: ["3.9", "3.12"]
@@ -79,5 +96,23 @@ jobs:
           key: ${{ runner.os }}-tox-${{ hashFiles('tox.ini') }}
           restore-keys: |
             ${{ runner.os }}-tox-
-      - name: Run tests
+      - name: Run Python tests
         run: tox
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run Rust tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all

@@ -76,7 +76,6 @@ Thumbs.db
 # Rust-specific
 target/
 **/*.rs.bk
-Cargo.lock
 
 # Rust profiling and debugging
 *.profraw
