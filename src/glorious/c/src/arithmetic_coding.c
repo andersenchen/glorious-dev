@@ -40,13 +40,21 @@
  */
 static inline int read_bit(const uint8_t *restrict encoded, size_t *bit_index,
                            size_t encoded_length) {
-  size_t byte_pos = *bit_index >> 3;  // Equivalent to bit_index / 8
+  size_t current_bit = *bit_index;
+  size_t byte_pos = current_bit >> 3;
+
   if (UNLIKELY(byte_pos >= encoded_length)) {
     return 0;  // End of data reached; default to 0
   }
-  int bit = (encoded[byte_pos] >> (7 - (*bit_index & 7))) &
-            1;     // Extract the desired bit
-  (*bit_index)++;  // Move to the next bit
+
+  // Extract the bit: Shift the byte right by (7 - bit_position) and mask with 1
+  uint8_t current_byte = encoded[byte_pos];
+  uint8_t shift = 7 - (current_bit & 7);
+  int bit = (current_byte >> shift) & 1;
+
+  // Increment bit_index using pre-increment for potential optimization
+  *bit_index = current_bit + 1;
+
   return bit;
 }
 
@@ -62,23 +70,36 @@ static inline int read_bit(const uint8_t *restrict encoded, size_t *bit_index,
 static inline void ensure_output_capacity(ArithmeticCoder *restrict coder,
                                           size_t additional) {
   size_t required = coder->output_size + additional;
+
   if (UNLIKELY(required > coder->output_capacity)) {
-    size_t new_capacity = coder->output_capacity ? coder->output_capacity
-                                                 : INITIAL_OUTPUT_CAPACITY;
-    // Calculate the next power of two greater than or equal to required
-    if (new_capacity == 0) new_capacity = INITIAL_OUTPUT_CAPACITY;
-    while (new_capacity < required) {
-      new_capacity <<= 1;  // Equivalent to new_capacity *= 2
-      if (UNLIKELY(new_capacity == 0)) {
-        new_capacity = INITIAL_OUTPUT_CAPACITY;
-        break;
-      }
+    size_t new_capacity = coder->output_capacity;
+    if (new_capacity == 0) {
+      new_capacity = INITIAL_OUTPUT_CAPACITY;
     }
+
+    // Calculate the next power of two greater than or equal to required
+    // Using a bit-twiddling method for efficiency
+    if (new_capacity < required) {
+      new_capacity = required;
+      // If not already a power of two, find the next power of two
+      new_capacity--;
+      new_capacity |= new_capacity >> 1;
+      new_capacity |= new_capacity >> 2;
+      new_capacity |= new_capacity >> 4;
+      new_capacity |= new_capacity >> 8;
+      new_capacity |= new_capacity >> 16;
+#if SIZE_MAX > UINT32_MAX
+      new_capacity |= new_capacity >> 32;
+#endif
+      new_capacity++;
+    }
+
     uint8_t *new_output = realloc(coder->output, new_capacity);
     if (UNLIKELY(!new_output)) {
       perror("Realloc failed");
       exit(EXIT_FAILURE);
     }
+
     coder->output = new_output;
     coder->output_capacity = new_capacity;
   }
@@ -145,9 +166,22 @@ static inline void flush_output(ArithmeticCoder *restrict coder) {
  * @return uint32_t Clamped probability in fixed-point.
  */
 static inline uint32_t clamp_probability_fixed(uint32_t p1_fixed) {
-  if (p1_fixed < 1) return 1;
-  if (p1_fixed > FIXED_SCALE - 1) return FIXED_SCALE - 1;
-  return p1_fixed;
+  // Branchless clamping to ensure 1 <= p1_fixed <= FIXED_SCALE - 1
+
+  // Compute masks
+  // mask_low is all ones if p1_fixed < 1, else all zeros
+  uint32_t mask_low = -(p1_fixed < 1);
+  // mask_high is all ones if p1_fixed >= FIXED_SCALE, else all zeros
+  uint32_t mask_high = -(p1_fixed >= FIXED_SCALE);
+
+  // Apply clamping in a single step
+  uint32_t clamped_p1_fixed =
+      (p1_fixed & ~(mask_low | mask_high))  // Keep original if within range
+      | (1 & mask_low)                      // Set to 1 if below range
+      |
+      ((FIXED_SCALE - 1) & mask_high);  // Set to FIXED_SCALE - 1 if above range
+
+  return clamped_p1_fixed;
 }
 
 /**
@@ -284,8 +318,7 @@ size_t arithmetic_encode(const uint8_t *restrict sequence, size_t length,
     context_content.count_ones = coder.count_ones;
 
     // Obtain the probability of the current bit being '1' based on the context
-    uint32_t p1_fixed =
-        clamp_probability_fixed(get_probability_fixed(&context_content));
+    uint32_t p1_fixed = get_probability_fixed(&context_content);
     uint32_t p0_fixed = FIXED_SCALE - p1_fixed;
 
     // Scale probabilities to the total frequency range
@@ -422,8 +455,7 @@ void arithmetic_decode(const uint8_t *restrict encoded, size_t encoded_length,
     context_content.count_ones = coder.count_ones;
 
     // Obtain the probability of the current bit being '1' based on the context
-    uint32_t p1_fixed =
-        clamp_probability_fixed(get_probability_fixed(&context_content));
+    uint32_t p1_fixed = get_probability_fixed(&context_content);
     uint32_t p0_fixed = FIXED_SCALE - p1_fixed;
 
     // Scale probabilities to the total frequency range
@@ -472,7 +504,8 @@ void arithmetic_decode(const uint8_t *restrict encoded, size_t encoded_length,
       } else if (coder.low >= HALF) {
         // The range is entirely in the upper half
         coder.value -= HALF;  // Remove the lower half from value
-        coder.low -= HALF;    // Remove the lower half from low
+        coder.low -= HALF;    // Remove the lower half from low\
+
         coder.high -= HALF;   // Remove the lower half from high
       } else if (coder.low >= QUARTER && coder.high < THREE_QUARTER) {
         // The range is in the middle half
