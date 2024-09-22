@@ -2,6 +2,8 @@
 
 #include "probability.h"
 
+#include <stdint.h>
+
 // Define the fixed scaling factor if not already defined
 #ifndef FIXED_SCALE
 #define FIXED_SCALE (1 << 16)  // 16-bit fixed-point scaling factor
@@ -33,14 +35,18 @@ uint32_t example_get_probability_fixed(const ContextContent *context_content) {
 
   // Branchless clamping to ensure 1 <= prob_fixed <= FIXED_SCALE - 1
 
-  // Clamp low: if prob_fixed < 1, set to 1
-  uint32_t clamp_low = -(prob_fixed < 1) & (1 - prob_fixed);
-  prob_fixed += clamp_low;
+  // Compute masks
+  // mask_low is all ones if prob_fixed < 1, else all zeros
+  uint32_t mask_low = -(prob_fixed < 1);
+  // mask_high is all ones if prob_fixed >= FIXED_SCALE, else all zeros
+  uint32_t mask_high = -(prob_fixed >= FIXED_SCALE);
 
-  // Clamp high: if prob_fixed >= FIXED_SCALE, set to FIXED_SCALE - 1
-  uint32_t clamp_high =
-      -(prob_fixed >= FIXED_SCALE) & ((FIXED_SCALE - 1) - prob_fixed);
-  prob_fixed += clamp_high;
+  // Apply clamping in a single step
+  prob_fixed =
+      (prob_fixed & ~(mask_low | mask_high))  // Keep original if within range
+      | (1 & mask_low)                        // Set to 1 if below range
+      |
+      ((FIXED_SCALE - 1) & mask_high);  // Set to FIXED_SCALE - 1 if above range
 
   return prob_fixed;
 }
