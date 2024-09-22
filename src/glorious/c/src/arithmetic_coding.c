@@ -11,10 +11,6 @@
 #include "probability.h"
 
 // -----------------------------
-// Arithmetic Coding Implementation
-// -----------------------------
-
-// -----------------------------
 // Compiler Optimization Hints
 // -----------------------------
 
@@ -69,10 +65,13 @@ static inline void ensure_output_capacity(ArithmeticCoder *restrict coder,
   if (UNLIKELY(required > coder->output_capacity)) {
     size_t new_capacity = coder->output_capacity ? coder->output_capacity
                                                  : INITIAL_OUTPUT_CAPACITY;
+    // Calculate the next power of two greater than or equal to required
+    if (new_capacity == 0) new_capacity = INITIAL_OUTPUT_CAPACITY;
     while (new_capacity < required) {
       new_capacity <<= 1;  // Equivalent to new_capacity *= 2
       if (UNLIKELY(new_capacity == 0)) {
         new_capacity = INITIAL_OUTPUT_CAPACITY;
+        break;
       }
     }
     uint8_t *new_output = realloc(coder->output, new_capacity);
@@ -163,10 +162,28 @@ static inline uint32_t clamp_probability_fixed(uint32_t p1_fixed) {
  */
 static inline void output_following_bits(ArithmeticCoder *restrict coder,
                                          int bit) {
-  while (LIKELY(coder->bits_to_follow > 0)) {
-    output_bit(coder, bit);
-    coder->bits_to_follow--;
+  size_t count = coder->bits_to_follow;
+  if (count == 0) return;
+
+  // Optimize by handling multiple bits at once if possible
+  while (count > 0) {
+    size_t bits_to_write =
+        count < 8 - coder->bit_count ? count : 8 - coder->bit_count;
+    for (size_t i = 0; i < bits_to_write; i++) {
+      coder->bit_buffer = (coder->bit_buffer << 1) | (bit & 1);
+      coder->bit_count++;
+    }
+    count -= bits_to_write;
+
+    if (coder->bit_count == 8) {
+      ensure_output_capacity(coder, 1);
+      coder->output[coder->output_size++] = (uint8_t)coder->bit_buffer;
+      coder->bit_buffer = 0;
+      coder->bit_count = 0;
+    }
   }
+
+  coder->bits_to_follow = 0;
 }
 
 /**
@@ -190,15 +207,15 @@ static inline void update_context_ring_buffer(ArithmeticCoder *restrict coder,
     int old_bit = (coder->context_buffer[byte_pos] >> bit_pos) & 1;
 
     // Set or clear the bit at the current position using precomputed mask
+    uint8_t mask = (1U << bit_pos);
     coder->context_buffer[byte_pos] =
-        (coder->context_buffer[byte_pos] & ~(1U << bit_pos)) |
-        ((new_bit & 1) << bit_pos);
+        (coder->context_buffer[byte_pos] & ~mask) | ((new_bit & 1) << bit_pos);
 
     // Update the count of '1's
     coder->count_ones += (uint32_t)new_bit - (uint32_t)old_bit;
 
     // Update the context index in a circular manner
-    coder->context_index += 1;
+    coder->context_index++;
     if (UNLIKELY(coder->context_index >= coder->context_capacity)) {
       coder->context_index -= coder->context_capacity;
     }
@@ -236,6 +253,7 @@ size_t arithmetic_encode(const uint8_t *restrict sequence, size_t length,
   // Initialize ArithmeticCoder using compound literal
   ArithmeticCoder coder = {0};
   coder.high = TOTAL_FREQUENCY - 1;
+  coder.low = 0;  // Initialize low as 0
   coder.output = malloc(INITIAL_OUTPUT_CAPACITY);
   if (UNLIKELY(!coder.output)) {
     perror("Initial malloc failed");
@@ -259,7 +277,8 @@ size_t arithmetic_encode(const uint8_t *restrict sequence, size_t length,
   // Iterate over each bit in the input sequence
   for (size_t i = 0; i < length; i++) {
     // Extract the current bit to encode
-    uint8_t bit = (sequence[i >> 3] >> (7 - (i & 7))) & 1;
+    uint8_t byte = sequence[i >> 3];
+    uint8_t bit = (byte >> (7 - (i & 7))) & 1;
 
     // Populate ContextContent with the current count of '1's
     context_content.count_ones = coder.count_ones;
@@ -272,9 +291,8 @@ size_t arithmetic_encode(const uint8_t *restrict sequence, size_t length,
     // Scale probabilities to the total frequency range
     uint32_t scaled_p0 =
         (uint32_t)(((uint64_t)p0_fixed * TOTAL_FREQUENCY) / FIXED_SCALE);
-    if (UNLIKELY(scaled_p0 >= TOTAL_FREQUENCY)) {
-      scaled_p0 = TOTAL_FREQUENCY - 1;
-    }
+    scaled_p0 =
+        (scaled_p0 >= TOTAL_FREQUENCY) ? (TOTAL_FREQUENCY - 1) : scaled_p0;
 
     // Calculate the current range
     uint32_t range = coder.high - coder.low + 1;
@@ -291,32 +309,28 @@ size_t arithmetic_encode(const uint8_t *restrict sequence, size_t length,
 
     // Renormalization: Shift the range until the high and low share the same
     // top bits
-    do {
+    while (1) {
       if (coder.high < HALF) {
         // The range is entirely in the lower half
-        // Output a '0' bit and handle any following bits
         output_bit(&coder, 0);
         output_following_bits(&coder, 1);
         coder.low <<= 1;
         coder.high = (coder.high << 1) | 1;
       } else if (coder.low >= HALF) {
         // The range is entirely in the upper half
-        // Output a '1' bit and handle any following bits
         output_bit(&coder, 1);
         output_following_bits(&coder, 0);
         coder.low = (coder.low - HALF) << 1;
         coder.high = ((coder.high - HALF) << 1) | 1;
       } else if (coder.low >= QUARTER && coder.high < THREE_QUARTER) {
         // The range is in the middle half
-        // Increment bits_to_follow and adjust the range
         coder.bits_to_follow++;
         coder.low = (coder.low - QUARTER) << 1;
         coder.high = ((coder.high - QUARTER) << 1) | 1;
       } else {
-        // No renormalization needed
-        break;
+        break;  // No renormalization needed
       }
-    } while (1);  // Continue until no more renormalization is needed
+    }
 
     // Update the context with the current bit using the ring buffer
     update_context_ring_buffer(&coder, bit);
@@ -415,33 +429,19 @@ void arithmetic_decode(const uint8_t *restrict encoded, size_t encoded_length,
     // Scale probabilities to the total frequency range
     uint32_t scaled_p0 =
         (uint32_t)(((uint64_t)p0_fixed * TOTAL_FREQUENCY) / FIXED_SCALE);
-    if (UNLIKELY(scaled_p0 >= TOTAL_FREQUENCY)) {
-      scaled_p0 = TOTAL_FREQUENCY - 1;
-    }
+    scaled_p0 =
+        (scaled_p0 >= TOTAL_FREQUENCY) ? (TOTAL_FREQUENCY - 1) : scaled_p0;
 
     // Calculate the current range
     uint32_t range = coder.high - coder.low + 1;
 
     // Calculate the scaled value which determines the current bit
-    // Optimize the calculation by rearranging operations
     uint64_t temp = (uint64_t)(coder.value - coder.low + 1);
     temp *= TOTAL_FREQUENCY;
     temp -= 1;
     uint32_t scaled_value = (uint32_t)(temp / range);
 
-    uint8_t bit;
-    if (scaled_value < scaled_p0) {
-      // The bit is '0'
-      bit = 0;
-      // Adjust the upper bound
-      coder.high =
-          coder.low + ((uint64_t)range * scaled_p0) / TOTAL_FREQUENCY - 1;
-    } else {
-      // The bit is '1'
-      bit = 1;
-      // Adjust the lower bound
-      coder.low += ((uint64_t)range * scaled_p0) / TOTAL_FREQUENCY;
-    }
+    uint8_t bit = (scaled_value < scaled_p0) ? 0 : 1;
 
     // Set the decoded bit in the output buffer using precomputed masks
     if (bit) {
@@ -455,27 +455,32 @@ void arithmetic_decode(const uint8_t *restrict encoded, size_t encoded_length,
     // Update the context with the decoded bit using the ring buffer
     update_context_ring_buffer(&coder, bit);
 
+    // Adjust coder.high and coder.low based on the decoded bit
+    if (bit == 0) {
+      coder.high =
+          coder.low + ((uint64_t)range * scaled_p0) / TOTAL_FREQUENCY - 1;
+    } else {
+      coder.low += ((uint64_t)range * scaled_p0) / TOTAL_FREQUENCY;
+    }
+
     // Renormalization: Shift the range until the high and low share the same
     // top bits
-    do {
+    while (1) {
       if (coder.high < HALF) {
         // The range is entirely in the lower half
         // No adjustment needed for value
       } else if (coder.low >= HALF) {
         // The range is entirely in the upper half
-        // Adjust the value and the range
         coder.value -= HALF;  // Remove the lower half from value
         coder.low -= HALF;    // Remove the lower half from low
         coder.high -= HALF;   // Remove the lower half from high
       } else if (coder.low >= QUARTER && coder.high < THREE_QUARTER) {
         // The range is in the middle half
-        // Adjust the value and the range
         coder.value -= QUARTER;  // Remove the lower quarter from value
         coder.low -= QUARTER;    // Remove the lower quarter from low
         coder.high -= QUARTER;   // Remove the lower quarter from high
       } else {
-        // No renormalization needed
-        break;
+        break;  // No renormalization needed
       }
 
       // Shift the range left by one bit
@@ -485,7 +490,7 @@ void arithmetic_decode(const uint8_t *restrict encoded, size_t encoded_length,
       // Shift the value left and read the next bit from the encoded data
       coder.value =
           (coder.value << 1) | read_bit(encoded, &bit_index, encoded_length);
-    } while (1);  // Continue until no more renormalization is needed
+    }
   }
 
   // No memory to free for coder.output as it's not used in decoding

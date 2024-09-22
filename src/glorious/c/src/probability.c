@@ -19,7 +19,6 @@
  * FIXED_SCALE.
  */
 uint32_t example_get_probability_fixed(const ContextContent *context_content) {
-  // Extract context_length and count_ones for efficiency
   uint32_t context_length = context_content->context_length;
   uint32_t count_ones = context_content->count_ones;
 
@@ -27,30 +26,20 @@ uint32_t example_get_probability_fixed(const ContextContent *context_content) {
   uint32_t numerator = count_ones + 1;
   uint32_t denominator = context_length + 2;
 
-  // Compute probability based on whether context_length is zero
-  uint32_t is_zero = (context_length == 0);
-  uint32_t prob_fixed_zero = FIXED_SCALE / 2;
+  // Compute probability without explicit zero context check
   uint32_t prob_fixed =
-      is_zero
-          ? prob_fixed_zero
-          : (uint32_t)(((uint64_t)numerator * FIXED_SCALE + (denominator / 2)) /
-                       denominator);
+      (uint32_t)(((uint64_t)numerator * FIXED_SCALE + (denominator / 2)) /
+                 denominator);
 
   // Branchless clamping to ensure 1 <= prob_fixed <= FIXED_SCALE - 1
 
-  // Clamp lower bound: if prob_fixed < 1, set to 1
-  // Compute mask: 0xFFFFFFFF if prob_fixed < 1, else 0x00000000
-  uint32_t clamp_low_mask = -(prob_fixed < 1);
-  // Calculate adjustment: if prob_fixed < 1, add (1 - prob_fixed), else add 0
-  uint32_t clamp_low = clamp_low_mask & (1 - prob_fixed);
+  // Clamp low: if prob_fixed < 1, set to 1
+  uint32_t clamp_low = -(prob_fixed < 1) & (1 - prob_fixed);
   prob_fixed += clamp_low;
 
-  // Clamp upper bound: if prob_fixed >= FIXED_SCALE, set to FIXED_SCALE - 1
-  // Compute mask: 0xFFFFFFFF if prob_fixed >= FIXED_SCALE, else 0x00000000
-  uint32_t clamp_high_mask = -(prob_fixed >= FIXED_SCALE);
-  // Calculate adjustment: if prob_fixed >= FIXED_SCALE, add (FIXED_SCALE - 1 -
-  // prob_fixed), else add 0
-  uint32_t clamp_high = clamp_high_mask & ((FIXED_SCALE - 1) - prob_fixed);
+  // Clamp high: if prob_fixed >= FIXED_SCALE, set to FIXED_SCALE - 1
+  uint32_t clamp_high =
+      -(prob_fixed >= FIXED_SCALE) & ((FIXED_SCALE - 1) - prob_fixed);
   prob_fixed += clamp_high;
 
   return prob_fixed;
