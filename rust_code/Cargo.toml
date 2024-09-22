@@ -9,7 +9,8 @@ contracts = "0.6"
 # Add any dependencies from arithmetic_coding_demo here
 # For example, if arithmetic_coding_demo had `serde = "1.0"`
 # serde = "1.0"
-proptest = "1.3" # For property-based testing
+proptest = "1.3"   # For property-based testing
+ndarray = "0.15.6"
 
 
 [dev-dependencies]

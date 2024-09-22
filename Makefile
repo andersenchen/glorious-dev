@@ -309,15 +309,36 @@ update-lock:
 # Rust-specific targets
 # -------------------------------------------------------------------------
 
+# Define strict Rust flags
+RUSTFLAGS := -D warnings
+CARGO_COMMON_FLAGS := --all-targets --all-features
+
+# Run 'cargo check' on Rust project with all warnings
+rust-check:
+	@echo "Running 'cargo check' on Rust project with all warnings..."
+	@(cd $(RUST_SRCDIR) && RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) check $(CARGO_COMMON_FLAGS))
+
+# Run Clippy on Rust project with strict lints
+rust-clippy:
+	@echo "Running Clippy on Rust project with strict lints..."
+	@(cd $(RUST_SRCDIR) && RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy $(CARGO_COMMON_FLAGS) -- -W clippy::all -W clippy::pedantic)
+# -------------------------------------------------------------------------
+# Rust-specific targets
+# -------------------------------------------------------------------------
+
+# Define Rust flags (less strict)
+RUSTFLAGS := -W warnings
+CARGO_COMMON_FLAGS := --all-features
+
 # Run 'cargo check' on Rust project
 rust-check:
 	@echo "Running 'cargo check' on Rust project..."
-	@(cd $(RUST_SRCDIR) && $(CARGO) check)
+	@(cd $(RUST_SRCDIR) && $(CARGO) check $(CARGO_COMMON_FLAGS))
 
-# Run Clippy on Rust project
+# Run Clippy on Rust project with default lints and allow dirty
 rust-clippy:
 	@echo "Running Clippy on Rust project..."
-	@(cd $(RUST_SRCDIR) && $(CARGO) clippy --fix --allow-dirty)
+	@(cd $(RUST_SRCDIR) && $(CARGO) clippy $(CARGO_COMMON_FLAGS) --allow-dirty --fix)
 
 # Format Rust code
 rust-fmt:
@@ -327,17 +348,25 @@ rust-fmt:
 # Build Rust project (debug)
 rust-build:
 	@echo "Building Rust project (debug)..."
-	@(cd $(RUST_SRCDIR) && $(CARGO) build)
+	@(cd $(RUST_SRCDIR) && RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build $(CARGO_COMMON_FLAGS))
 
 # Build Rust project (release)
 rust-build-release:
 	@echo "Building Rust project (release)..."
-	@(cd $(RUST_SRCDIR) && $(CARGO) build --release)
+	@(cd $(RUST_SRCDIR) && RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --release $(CARGO_COMMON_FLAGS))
 
-# Run all Rust-related tasks including release build
-rust-all: rust-check rust-clippy rust-fmt rust-test rust-build rust-build-release
+# Run tests
+rust-test:
+	@echo "Running Rust tests..."
+	@(cd $(RUST_SRCDIR) && $(CARGO) test $(CARGO_COMMON_FLAGS))
 
+# Generate documentation
+rust-doc:
+	@echo "Generating Rust documentation..."
+	@(cd $(RUST_SRCDIR) && $(CARGO) doc --no-deps $(CARGO_COMMON_FLAGS))
 
+# Run all Rust-related tasks including release build and documentation
+rust-all: rust-check rust-clippy rust-fmt rust-test rust-build rust-build-release rust-doc
 # =============================================================================
 # End of Makefile
 # =============================================================================
