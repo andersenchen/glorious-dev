@@ -1,3 +1,0 @@
-[workspace]
-members = ["rust_code", "arithmetic_coding_demo"]
-resolver = "2"                                    # Added to resolve Clippy warning

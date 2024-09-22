@@ -421,7 +421,23 @@ impl ArithmeticCoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use rand::Rng;
+
     use crate::probability::example_get_probability_fixed;
+
+    /// Helper function to generate random bit sequences for testing.
+    fn generate_random_bits(length: usize) -> Vec<u8> {
+        let mut rng = rand::thread_rng();
+        let bytes = (length + 7) / 8;
+        let mut bits = vec![0u8; bytes];
+        for i in 0..length {
+            let byte = i / 8;
+            let bit = 7 - (i % 8);
+            bits[byte] |= (rng.gen_bool(0.5) as u8) << bit;
+        }
+        bits
+    }
 
     #[test]
     fn test_arithmetic_encode_decode() {
@@ -525,5 +541,256 @@ mod tests {
         )
         .unwrap();
         assert_eq!(decoded, input_bits);
+    }
+
+    #[test]
+    fn test_arithmetic_encode_decode_random() {
+        let input_length = 1024;
+        let context_length = 16;
+        let input_bits = generate_random_bits(input_length);
+
+        let encoded = arithmetic_encode(
+            &input_bits,
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert!(!encoded.is_empty());
+
+        let decoded = arithmetic_decode(
+            &encoded,
+            encoded.len(),
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+
+        // Truncate the last byte if input_length is not a multiple of 8
+        let mut expected = input_bits.clone();
+        if input_length % 8 != 0 {
+            let excess_bits = 8 - (input_length % 8);
+            let last_byte_mask = 0xFF << excess_bits;
+            if let Some(last_byte) = expected.last_mut() {
+                *last_byte &= last_byte_mask;
+            }
+        }
+
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn test_encode_decode_with_all_zeros() {
+        let input_length = 64;
+        let context_length = 8;
+        let input_bits = vec![0u8; 8]; // 64 zeros
+
+        let encoded = arithmetic_encode(
+            &input_bits,
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert!(!encoded.is_empty());
+
+        let decoded = arithmetic_decode(
+            &encoded,
+            encoded.len(),
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert_eq!(decoded, input_bits);
+    }
+
+    #[test]
+    fn test_encode_decode_with_all_ones() {
+        let input_length = 64;
+        let context_length = 8;
+        let input_bits = vec![0xFFu8; 8]; // 64 ones
+
+        let encoded = arithmetic_encode(
+            &input_bits,
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert!(!encoded.is_empty());
+
+        let decoded = arithmetic_decode(
+            &encoded,
+            encoded.len(),
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert_eq!(decoded, input_bits);
+    }
+
+    proptest! {
+        #[test]
+        fn test_arithmetic_encode_decode_prop(
+            input_bits in proptest::collection::vec(0u8..=255, 0usize..=8192),
+            length in 0usize..=65536,
+            context_length in 1usize..=256
+        ) {
+            // Adjust the input_bits to have at least 'length' bits
+            let required_bytes = (length + 7) / 8;
+            let mut bits = input_bits.clone();
+            bits.resize(required_bytes, 0);
+
+            let encoded = arithmetic_encode(&bits, length, context_length, example_get_probability_fixed).unwrap();
+            let decoded = arithmetic_decode(&encoded, encoded.len(), length, context_length, example_get_probability_fixed).unwrap();
+
+            // Recreate the expected bits
+            let mut expected = vec![0u8; (length + 7) / 8];
+            for i in 0..length {
+                let byte = i / 8;
+                let bit_pos = 7 - (i % 8);
+                let bit = (bits[byte] >> bit_pos) & 1;
+                if bit == 1 {
+                    expected[byte] |= 1 << bit_pos;
+                } else {
+                    expected[byte] &= !(1 << bit_pos);
+                }
+            }
+
+            assert_eq!(decoded, expected);
+        }
+    }
+
+    #[test]
+    fn test_encode_decode_max_context() {
+        let input_length = 128;
+        let context_length = 256; // Maximum allowed
+
+        // Generate a pattern with alternating bits
+        let mut input_bits = vec![0u8; 16];
+        for i in 0..input_length {
+            if i % 2 == 0 {
+                input_bits[i / 8] |= 1 << (7 - (i % 8));
+            }
+        }
+
+        let encoded = arithmetic_encode(
+            &input_bits,
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert!(!encoded.is_empty());
+
+        let decoded = arithmetic_decode(
+            &encoded,
+            encoded.len(),
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert_eq!(decoded, input_bits);
+    }
+
+    /// Test that encoding with a context length of zero behaves correctly.
+    #[test]
+    fn test_encode_decode_zero_context() {
+        let input_length = 16;
+        let context_length = 0; // No context
+
+        let input_bits = [0b10101010, 0b01010101];
+
+        let encoded = arithmetic_encode(
+            &input_bits,
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert!(!encoded.is_empty());
+
+        let decoded = arithmetic_decode(
+            &encoded,
+            encoded.len(),
+            input_length,
+            context_length,
+            example_get_probability_fixed,
+        )
+        .unwrap();
+        assert_eq!(decoded, input_bits);
+    }
+
+    /// Test encoding and decoding with varying context lengths.
+    #[test]
+    fn test_encode_decode_various_contexts() {
+        let input_length = 64;
+        let input_bits = generate_random_bits(input_length);
+
+        for context_length in [1, 4, 8, 16, 32, 64] {
+            let encoded = arithmetic_encode(
+                &input_bits,
+                input_length,
+                context_length,
+                example_get_probability_fixed,
+            )
+            .unwrap();
+            assert!(!encoded.is_empty());
+
+            let decoded = arithmetic_decode(
+                &encoded,
+                encoded.len(),
+                input_length,
+                context_length,
+                example_get_probability_fixed,
+            )
+            .unwrap();
+            // Truncate the last byte if input_length is not a multiple of 8
+            let mut expected = input_bits.clone();
+            if input_length % 8 != 0 {
+                let excess_bits = 8 - (input_length % 8);
+                let last_byte_mask = 0xFF << excess_bits;
+                if let Some(last_byte) = expected.last_mut() {
+                    *last_byte &= last_byte_mask;
+                }
+            }
+            assert_eq!(decoded, expected);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_encode_decode_large_data(
+            input_bits in proptest::collection::vec(0u8..=255, 0usize..=65536),
+            length in 0usize..=524288,
+            context_length in 1usize..=256
+        ) {
+            // Adjust the input_bits to have at least 'length' bits
+            let required_bytes = (length + 7) / 8;
+            let mut bits = input_bits.clone();
+            bits.resize(required_bytes, 0);
+
+            let encoded = arithmetic_encode(&bits, length, context_length, example_get_probability_fixed).unwrap();
+            let decoded = arithmetic_decode(&encoded, encoded.len(), length, context_length, example_get_probability_fixed).unwrap();
+
+            // Recreate the expected bits
+            let mut expected = vec![0u8; (length + 7) / 8];
+            for i in 0..length {
+                let byte = i / 8;
+                let bit_pos = 7 - (i % 8);
+                let bit = (bits[byte] >> bit_pos) & 1;
+                if bit == 1 {
+                    expected[byte] |= 1 << bit_pos;
+                } else {
+                    expected[byte] &= !(1 << bit_pos);
+                }
+            }
+
+            assert_eq!(decoded, expected);
+        }
     }
 }

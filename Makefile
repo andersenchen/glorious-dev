@@ -72,7 +72,6 @@ PYTHON_MODULE_NAME := glorious
 # Rust-specific variables
 CARGO := cargo
 RUST_SRCDIR := rust_code
-ARITHMETIC_CODING_DEMO_DIR := arithmetic_coding_demo
 
 # =============================================================================
 #                                 Targets
@@ -81,11 +80,11 @@ ARITHMETIC_CODING_DEMO_DIR := arithmetic_coding_demo
 # Declare phony targets to avoid conflicts with files of the same name
 .PHONY: all clean install wheel test unit_tests integration_tests deps \
         valgrind-python leaks-python examples run_c \
-        check-poetry check-lock update-lock build_ext tree ship \
+        check-poetry check-lock check-tox update-lock build_ext tree ship \
         rust-check rust-clippy rust-fmt rust-test rust-build rust-all
 
 # Default target: Executes a sequence of essential build steps
-all: check-python check-poetry check-lock build_ext install test rust-all
+all: check-python check-poetry check-lock build_ext install check-tox test rust-all
 
 # -------------------------------------------------------------------------
 # Setup and Installation
@@ -132,6 +131,19 @@ install: build_ext
 		} \
 	}
 	@echo "Dependencies installed successfully."
+
+# -------------------------------------------------------------------------
+# Ensure Tox is Installed
+# -------------------------------------------------------------------------
+
+# Check if Tox is installed in the Poetry environment, install if missing
+check-tox: check-poetry install
+	@echo "Checking if Tox is installed in the Poetry environment..."
+	@poetry run tox --version >/dev/null 2>&1 || { \
+		echo >&2 "Tox is not installed. Installing Tox as a dev dependency..."; \
+		poetry add --dev tox || { echo >&2 "Failed to install Tox."; exit 1; } \
+	}
+	@echo "Tox is installed."
 
 # Build Python Wheel using Poetry
 wheel: build_ext install
@@ -184,9 +196,6 @@ endif
 
 	@echo "Cleaning Rust build artifacts..."
 	@(cd $(RUST_SRCDIR) && $(CARGO) clean)
-	@(cd $(ARITHMETIC_CODING_DEMO_DIR) && $(CARGO) clean)
-	@$(CARGO) clean
-
 	@echo "Clean complete."
 
 # -------------------------------------------------------------------------
@@ -231,7 +240,7 @@ else
 endif
 
 # Run all tests using Tox in parallel across all supported Python versions
-test: clean install
+test: check-tox
 	@echo "Running all tests using Tox in parallel..."
 	@poetry run tox --parallel auto
 	@echo "All tests passed successfully."
@@ -300,39 +309,34 @@ update-lock:
 # Rust-specific targets
 # -------------------------------------------------------------------------
 
-# Run 'cargo check' on all Rust projects
+# Run 'cargo check' on Rust project
 rust-check:
-	@echo "Running 'cargo check' on all Rust projects..."
+	@echo "Running 'cargo check' on Rust project..."
 	@(cd $(RUST_SRCDIR) && $(CARGO) check)
-	@(cd $(ARITHMETIC_CODING_DEMO_DIR) && $(CARGO) check)
-	@$(CARGO) check
 
-# Run Clippy on all Rust projects
+# Run Clippy on Rust project
 rust-clippy:
-	@echo "Running Clippy on all Rust projects..."
-	@$(CARGO) clippy --fix --allow-dirty
+	@echo "Running Clippy on Rust project..."
+	@(cd $(RUST_SRCDIR) && $(CARGO) clippy --fix --allow-dirty)
 
 # Format Rust code
 rust-fmt:
 	@echo "Formatting Rust code..."
-	@$(CARGO) fmt --all
+	@(cd $(RUST_SRCDIR) && $(CARGO) fmt --all)
 
-# Run Rust tests
-rust-test:
-	@echo "Running Rust tests..."
-	@(cd $(RUST_SRCDIR) && $(CARGO) test)
-	@(cd $(ARITHMETIC_CODING_DEMO_DIR) && $(CARGO) test)
-	@$(CARGO) test
-
-# Build Rust projects
+# Build Rust project (debug)
 rust-build:
-	@echo "Building Rust projects..."
+	@echo "Building Rust project (debug)..."
 	@(cd $(RUST_SRCDIR) && $(CARGO) build)
-	@(cd $(ARITHMETIC_CODING_DEMO_DIR) && $(CARGO) build)
-	@$(CARGO) build
 
-# Run all Rust-related tasks
-rust-all: rust-check rust-clippy rust-fmt rust-test rust-build
+# Build Rust project (release)
+rust-build-release:
+	@echo "Building Rust project (release)..."
+	@(cd $(RUST_SRCDIR) && $(CARGO) build --release)
+
+# Run all Rust-related tasks including release build
+rust-all: rust-check rust-clippy rust-fmt rust-test rust-build rust-build-release
+
 
 # =============================================================================
 # End of Makefile

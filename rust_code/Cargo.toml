@@ -1,5 +1,3 @@
-# rust_code/Cargo.toml
-
 [package]
 name = "rust_code"
 version = "0.1.0"
@@ -7,3 +5,19 @@ edition = "2021"
 description = "Arithmetic coding implementation in Rust."
 
 [dependencies]
+contracts = "0.6"
+# Add any dependencies from arithmetic_coding_demo here
+# For example, if arithmetic_coding_demo had `serde = "1.0"`
+# serde = "1.0"
+proptest = "1.3" # For property-based testing
+
+
+[dev-dependencies]
+rand = "0.8"     # For random number generation in tests
+proptest = "1.3" # For property-based testing
+
+# Remove the [workspace] section if consolidating into a single project
+# Alternatively, adjust workspace if keeping it
+
+# If you plan to keep a workspace for future projects, adjust accordingly
+# Otherwise, remove the workspace section

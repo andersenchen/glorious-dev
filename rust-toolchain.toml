@@ -1,0 +1,4 @@
+# rust-toolchain.toml
+[toolchain]
+channel = "stable-aarch64-apple-darwin"
+components = ["rust-src"]
