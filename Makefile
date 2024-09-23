@@ -298,7 +298,9 @@ tree:
 
 # Automatically commit all changes using an AI-generated commit message and push to private/main
 ship: install
+	@echo "Running AI-generated autocommit..."
 	@poetry run $(PYTHON) scripts/autocommit.py --push-to-private --force
+	@echo "Autocommit and push completed."
 
 # Update poetry.lock without updating dependencies
 update-lock:
