@@ -312,20 +312,6 @@ update-lock:
 # Rust-specific targets
 # -------------------------------------------------------------------------
 
-# Define strict Rust flags
-RUSTFLAGS := -D warnings
-CARGO_COMMON_FLAGS := --all-targets --all-features
-
-# Run 'cargo check' on Rust project with all warnings
-rust-check:
-	@echo "Running 'cargo check' on Rust project with all warnings..."
-	@(cd $(RUST_SRCDIR) && RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) check $(CARGO_COMMON_FLAGS))
-
-# Run Clippy on Rust project with strict lints
-rust-clippy:
-	@echo "Running Clippy on Rust project with strict lints..."
-	@(cd $(RUST_SRCDIR) && RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy $(CARGO_COMMON_FLAGS) -- -W clippy::all -W clippy::pedantic)
-
 # Define Rust flags (less strict)
 RUSTFLAGS := -W warnings
 CARGO_COMMON_FLAGS := --all-features
@@ -365,8 +351,14 @@ rust-doc:
 	@echo "Generating Rust documentation..."
 	@(cd $(RUST_SRCDIR) && $(CARGO) doc --no-deps $(CARGO_COMMON_FLAGS))
 
+# Run 'cargo +nightly udeps' to detect unused dependencies in Rust project
+rust-udeps:
+	@echo "Running 'cargo +nightly udeps' to check for unused dependencies..."
+	@(cd $(RUST_SRCDIR) && cargo +nightly udeps)
+
+
 # Run all Rust-related tasks including release build and documentation
-rust-all: rust-check rust-clippy rust-fmt rust-test rust-build rust-build-release rust-doc
+rust-all: rust-check rust-clippy rust-fmt rust-test rust-build rust-build-release rust-doc rust-udeps
 # =============================================================================
 # End of Makefile
 # =============================================================================
