@@ -8,6 +8,12 @@ const FIXED_SCALE: u32 = 1 << 16; // Must match the probability module.
 const INITIAL_OUTPUT_CAPACITY: usize = 1024;
 const MAX_CONTEXT_BYTES: usize = 256;
 
+/// Derived constants based on PRECISION.
+const TOTAL_FREQUENCY: u64 = 1u64 << PRECISION;
+const HALF: u64 = 1u64 << (PRECISION - 1);
+const QUARTER: u64 = 1u64 << (PRECISION - 2);
+const THREE_QUARTER: u64 = 3u64 << (PRECISION - 2);
+
 /// Represents the state of the Arithmetic Coder.
 pub struct ArithmeticCoder {
     low: u64,
@@ -72,14 +78,8 @@ pub fn arithmetic_encode(
     context_length: usize,
     get_probability_fixed: ProbabilityFunction,
 ) -> Result<Vec<u8>, ArithmeticCodingError> {
-    // Initialize coder with low=0, high=TOTAL_FREQUENCY -1, value=0
+    // Initialize coder with low=0, high=TOTAL_FREQUENCY -1
     let mut coder = ArithmeticCoder::new(context_length)?;
-
-    // Precompute constants based on PRECISION
-    let total_frequency = 1u64 << PRECISION;
-    let half = 1u64 << (PRECISION - 1);
-    let quarter = 1u64 << (PRECISION - 2);
-    let three_quarter = 3u64 << (PRECISION - 2);
 
     // Iterate over each bit in the input sequence
     for i in 0..length {
@@ -99,7 +99,7 @@ pub fn arithmetic_encode(
 
         // Scale probabilities to the total frequency range
         let scaled_p0 =
-            ((p0_fixed as u64 * total_frequency) / FIXED_SCALE as u64).min(total_frequency - 1);
+            ((p0_fixed as u64 * TOTAL_FREQUENCY) / FIXED_SCALE as u64).min(TOTAL_FREQUENCY - 1);
 
         // Calculate the current range
         let range = coder.high - coder.low + 1;
@@ -107,31 +107,31 @@ pub fn arithmetic_encode(
         // Update coder.low and coder.high based on the bit
         if bit == 0 {
             // For bit '0', adjust the upper bound
-            coder.high = coder.low + ((range * scaled_p0) / total_frequency) - 1;
+            coder.high = coder.low + ((range * scaled_p0) / TOTAL_FREQUENCY) - 1;
         } else {
             // For bit '1', adjust the lower bound
-            coder.low += (range * scaled_p0) / total_frequency;
+            coder.low += (range * scaled_p0) / TOTAL_FREQUENCY;
         }
 
         // Renormalization: Shift the range until high and low share the same top bits
         loop {
-            if coder.high < half {
+            if coder.high < HALF {
                 // The range is entirely in the lower half
                 coder.output_bit(0)?;
                 coder.output_following_bits(1)?;
                 coder.low <<= 1;
                 coder.high = (coder.high << 1) | 1;
-            } else if coder.low >= half {
+            } else if coder.low >= HALF {
                 // The range is entirely in the upper half
                 coder.output_bit(1)?;
                 coder.output_following_bits(0)?;
-                coder.low = (coder.low - half) << 1;
-                coder.high = ((coder.high - half) << 1) | 1;
-            } else if coder.low >= quarter && coder.high < three_quarter {
+                coder.low = (coder.low - HALF) << 1;
+                coder.high = ((coder.high - HALF) << 1) | 1;
+            } else if coder.low >= QUARTER && coder.high < THREE_QUARTER {
                 // The range is in the middle half
                 coder.bits_to_follow += 1;
-                coder.low = (coder.low - quarter) << 1;
-                coder.high = ((coder.high - quarter) << 1) | 1;
+                coder.low = (coder.low - QUARTER) << 1;
+                coder.high = ((coder.high - QUARTER) << 1) | 1;
             } else {
                 break; // No renormalization needed
             }
@@ -143,7 +143,7 @@ pub fn arithmetic_encode(
 
     // Final bits: After processing all input bits, handle the remaining range
     coder.bits_to_follow += 1;
-    if coder.low < quarter {
+    if coder.low < QUARTER {
         // If the final range is in the lower quarter, output a '0' bit followed by '1's
         coder.output_bit(0)?;
         coder.output_following_bits(1)?;
@@ -188,14 +188,8 @@ pub fn arithmetic_decode(
     context_length: usize,
     get_probability_fixed: ProbabilityFunction,
 ) -> Result<Vec<u8>, ArithmeticCodingError> {
-    // Initialize coder with low=0, high=TOTAL_FREQUENCY -1, value=0
+    // Initialize coder with low=0, high=TOTAL_FREQUENCY -1
     let mut coder = ArithmeticCoder::new(context_length)?;
-
-    // Precompute constants based on PRECISION
-    let total_frequency = 1u64 << PRECISION;
-    let half = 1u64 << (PRECISION - 1);
-    let quarter = 1u64 << (PRECISION - 2);
-    let three_quarter = 3u64 << (PRECISION - 2);
 
     // Initialize coder.value by reading the first PRECISION bits from the encoded data
     for _ in 0..PRECISION {
@@ -219,13 +213,13 @@ pub fn arithmetic_decode(
 
         // Scale probabilities to the total frequency range
         let scaled_p0 =
-            ((p0_fixed as u64 * total_frequency) / FIXED_SCALE as u64).min(total_frequency - 1);
+            ((p0_fixed as u64 * TOTAL_FREQUENCY) / FIXED_SCALE as u64).min(TOTAL_FREQUENCY - 1);
 
         // Calculate the current range
         let range = coder.high - coder.low + 1;
 
         // Calculate the scaled value which determines the current bit
-        let temp = ((coder.value - coder.low + 1) as u128 * total_frequency as u128) - 1;
+        let temp = ((coder.value - coder.low + 1) as u128 * TOTAL_FREQUENCY as u128) - 1;
         let scaled_value = (temp / range as u128) as u64;
 
         let bit = if scaled_value < scaled_p0 { 0 } else { 1 };
@@ -242,26 +236,26 @@ pub fn arithmetic_decode(
 
         // Update coder.high and coder.low based on the decoded bit
         if bit == 0 {
-            coder.high = coder.low + ((range * scaled_p0) / total_frequency) - 1;
+            coder.high = coder.low + ((range * scaled_p0) / TOTAL_FREQUENCY) - 1;
         } else {
-            coder.low += (range * scaled_p0) / total_frequency;
+            coder.low += (range * scaled_p0) / TOTAL_FREQUENCY;
         }
 
         // Renormalization: Shift the range until high and low share the same top bits
         loop {
-            if coder.high < half {
+            if coder.high < HALF {
                 // The range is entirely in the lower half
                 // No adjustment needed for value
-            } else if coder.low >= half {
+            } else if coder.low >= HALF {
                 // The range is entirely in the upper half
-                coder.value -= half;
-                coder.low -= half;
-                coder.high -= half;
-            } else if coder.low >= quarter && coder.high < three_quarter {
+                coder.value -= HALF;
+                coder.low -= HALF;
+                coder.high -= HALF;
+            } else if coder.low >= QUARTER && coder.high < THREE_QUARTER {
                 // The range is in the middle half
-                coder.value -= quarter;
-                coder.low -= quarter;
-                coder.high -= quarter;
+                coder.value -= QUARTER;
+                coder.low -= QUARTER;
+                coder.high -= QUARTER;
             } else {
                 break; // No renormalization needed
             }
@@ -288,7 +282,7 @@ impl ArithmeticCoder {
     ///
     /// # Errors
     ///
-    /// Returns an error if `context_length` exceeds `MAX_CONTEXT_BYTES * 8`.
+    /// Returns an error if `context_length` exceeds `MAX_CONTEXT_BYTES * 8` bits.
     fn new(context_length: usize) -> Result<Self, ArithmeticCodingError> {
         if context_length > MAX_CONTEXT_BYTES * 8 {
             return Err(ArithmeticCodingError::InvalidInput(format!(
@@ -300,7 +294,7 @@ impl ArithmeticCoder {
 
         Ok(ArithmeticCoder {
             low: 0,
-            high: (1u64 << PRECISION) - 1,
+            high: TOTAL_FREQUENCY - 1,
             value: 0,
             bits_to_follow: 0,
             bit_buffer: 0,
